@@ -18,7 +18,7 @@ $env:PYTHONPATH = "src"
 Invoke-Checked "version" { & $Python -m modforge --version }
 Invoke-Checked "profiles" { & $Python -m modforge profiles --json }
 
-$demo = Join-Path $env:TEMP ("modforge-smoke-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$demo = Join-Path $env:TEMP ("modforge-smoke-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 $game = Join-Path $demo "game"
 $mods = Join-Path $demo "mods"
 $project = Join-Path $demo "modforge.project.json"

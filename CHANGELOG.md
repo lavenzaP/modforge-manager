@@ -6,6 +6,20 @@
 - Add release-readiness safety coverage for case-insensitive path conflicts,
   linked paths, ZIP absolute paths, and Unreal sidecar restore selection.
 - Add MVP freeze support matrix and release checklist docs.
+- Add an experimental WPF/C# Windows shell with guided onboarding, sample shell
+  data, lazy sidecar policy, and a local `.exe` build script.
+- Harden the WPF shell with workflow-state action gating, interactive guided
+  setup buttons, dark table styling, selected-mod details, plan review gates,
+  and apply/restore action zones.
+- Add a WPF workflow-state consistency pass so Plan review, staging, game
+  apply, restore, manifests, top actions, and status labels share the same
+  state source.
+- Add a WinUI 3 comparison shell scaffold with the same workflow-state gates,
+  plus build/smoke scripts that explain the required .NET SDK and Windows App
+  SDK toolchain.
+- Promote WinUI 3 to the primary Windows shell candidate while retaining WPF as
+  fallback, with tighter empty states, path formatting, table readability, and
+  publish-file checks.
 
 ## 0.1.0 MVP RC
 
@@ -38,3 +52,6 @@
 - No Godot PCK or Unreal archive repacking.
 - No virtual filesystem or MO2/Vortex replacement layer.
 - No installer, signing, auto-update, or public package publishing yet.
+- The WPF shell is still a direction spike; real Python sidecar calls are
+  deferred, but the Milestone 6C UI now behaves like a state-consistent gated
+  workflow shell instead of a static description.

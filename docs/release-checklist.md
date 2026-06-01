@@ -20,6 +20,21 @@ python -m compileall -q src tests
 .\scripts\release_smoke.ps1
 ```
 
+## Optional Desktop Shell Gate
+
+The Milestone 6A WPF shell can be built and smoke-tested locally on Windows:
+
+```powershell
+.\scripts\release_smoke.ps1 -IncludeDesktop
+.\scripts\smoke_windows_shell.ps1
+```
+
+The executable is written to:
+
+```text
+dist\ModForge.App\ModForge.App.exe
+```
+
 ## Optional Lint Gate
 
 Install development tooling first:

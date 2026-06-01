@@ -12,6 +12,7 @@ from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
 from modforge.core.project_portability import audit_project
 from modforge.core.user_profile import normalize_profile_id
+from modforge.tk_runtime import prime_tcl_find_executable
 from modforge.tools.checker import check_tools
 
 
@@ -92,7 +93,12 @@ def _check_profiles() -> DoctorCheck:
 
 def _check_tkinter() -> DoctorCheck:
     try:
-        import tkinter  # noqa: F401
+        prime_tcl_find_executable()
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        root.destroy()
     except Exception as error:  # pragma: no cover - platform dependent
         return DoctorCheck("tkinter", "warning", f"tkinter GUI is unavailable: {error}")
     return DoctorCheck("tkinter", "ok", "tkinter GUI runtime is available.")

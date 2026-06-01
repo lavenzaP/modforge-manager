@@ -54,6 +54,17 @@
 - Safety edge tests for linked paths, ZIP absolute paths, Windows path casing,
   and Unreal sidecar restore selection. Done.
 
+## Phase 6
+
+- Windows-first WPF shell direction spike. Done.
+- Guided onboarding for REFramework, Unreal, and Godot/STS2 workflows. Done.
+- Lazy Python sidecar contract. Done.
+- Local `.exe` build artifact for the shell. Done.
+- Interactive workflow UI hardening. Done.
+- Workflow-state gated top actions and apply locks. Done.
+- Plan review gate, selected mod details, manifest/restore action surfaces, and
+  tool status table. Done.
+
 ## Deferred
 
 - Nexus Mods login or downloads.

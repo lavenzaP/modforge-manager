@@ -56,6 +56,9 @@ Current freeze docs:
 - [Support matrix](docs/support-matrix.md)
 - [Release checklist](docs/release-checklist.md)
 - [Changelog](CHANGELOG.md)
+- [Architecture V2](docs/architecture-v2.md)
+- [Windows shell plan](docs/windows-shell-plan.md)
+- [Onboarding UX](docs/onboarding-ux.md)
 
 ## Quick Start
 
@@ -152,12 +155,41 @@ python -m modforge restore --manifest $manifest.FullName --path nativePC/wp/swo/
 Run the lightweight GUI:
 
 ```powershell
-$env:PYTHONPATH = "src"
-python -m modforge.app
+.\run_gui.bat
+```
+
+For a non-interactive runtime check:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_gui.ps1 -Check
 ```
 
 The GUI intentionally uses the Python standard library `tkinter` for the first
-usable version, so it can run in a fresh Python environment.
+usable version, so it can run in a fresh Python environment. On Windows the app
+primes Tcl before creating the first Tk window, which avoids broken `init.tcl`
+lookups in embedded or locally repaired Python installs.
+
+Run the experimental Windows-first WPF shell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows_shell.ps1
+.\dist\ModForge.App\ModForge.App.exe
+```
+
+This shell is the Windows-first product-direction spike. It launches without
+Python, shows guided onboarding and sample state data, and intentionally defers
+real scan/plan/apply work until the sidecar bridge is wired in a later
+milestone.
+
+Run the WinUI 3 primary Windows shell candidate after installing .NET SDK 9:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_winui_shell.ps1
+.\dist\ModForge.WinUI\ModForge.WinUI.exe
+```
+
+See `docs\windows-shell-decision.md` and `docs\winui3-comparison.md` for the
+WinUI 3 decision and WPF fallback policy.
 
 Run the optional PySide6 GUI after installing the GUI extra:
 
@@ -192,6 +224,7 @@ Run tests with stdlib only:
 python -m unittest discover -s tests
 python -m modforge doctor --project-file modforge.project.json
 .\scripts\release_smoke.ps1
+.\scripts\release_smoke.ps1 -IncludeDesktop
 ```
 
 Optional dev tooling after installing extras:

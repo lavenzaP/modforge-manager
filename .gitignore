@@ -11,8 +11,24 @@ dist/
 *.egg-info/
 .venv/
 venv/
+.dotnet_cli_home/
+.nuget/
 .idea/
 .vscode/
+.vs/
+*.suo
+*.user
+*.rsuser
+*.sln.docstates
+*.pdb
+*.nupkg
+*.snupkg
+
+# .NET desktop outputs
+desktop/**/bin/
+desktop/**/obj/
+desktop/**/TestResults/
+desktop/**/publish/
 
 # Local app state
 modforge.project.json

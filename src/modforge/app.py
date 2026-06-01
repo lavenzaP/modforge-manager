@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
@@ -15,14 +13,49 @@ from modforge.core.mod_package import ModPackage, scan_project_mods
 from modforge.core.mod_project import ModProject
 from modforge.core.project_portability import audit_project
 from modforge.reports.markdown import render_deployment_report
+from modforge.tk_runtime import prime_tcl_find_executable
 from modforge.tools.checker import ToolCheck, check_tools
 from modforge.tools.registry import KNOWN_TOOLS
+
+tk = None
+filedialog = None
+messagebox = None
+simpledialog = None
+ttk = None
+
+
+def _load_tkinter() -> None:
+    global filedialog, messagebox, simpledialog, tk, ttk
+
+    if tk is not None:
+        return
+
+    prime_tcl_find_executable()
+
+    import tkinter as loaded_tk
+    from tkinter import filedialog as loaded_filedialog
+    from tkinter import messagebox as loaded_messagebox
+    from tkinter import simpledialog as loaded_simpledialog
+    from tkinter import ttk as loaded_ttk
+
+    tk = loaded_tk
+    filedialog = loaded_filedialog
+    messagebox = loaded_messagebox
+    simpledialog = loaded_simpledialog
+    ttk = loaded_ttk
+
+
+def create_root() -> tk.Tk:
+    """Create a Tk root after applying the Windows Tcl bootstrap."""
+
+    _load_tkinter()
+    return tk.Tk()
 
 
 def main() -> int:
     """Run the current lightweight GUI shell."""
 
-    root = tk.Tk()
+    root = create_root()
     ModForgeApp(root)
     root.mainloop()
     return 0
@@ -30,6 +63,7 @@ def main() -> int:
 
 class ModForgeApp:
     def __init__(self, root: tk.Tk) -> None:
+        _load_tkinter()
         self.root = root
         self.root.title("ModForge Manager")
         self.project: ModProject | None = None

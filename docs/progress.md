@@ -174,3 +174,74 @@
   with the same stem copy from their own source archive.
 - Expanded restore selection for Unreal sidecar groups.
 - Expanded tests from 66 to 76 stdlib `unittest` cases.
+
+## Windows Shell Direction Spike
+
+- Re-consulted ChatGPT through Whale/CS WebLatch after user feedback on
+  onboarding, tkinter polish, Windows-first `.exe` delivery, and cold-start
+  performance.
+- Selected a WPF/C# shell as the next product direction while keeping the
+  Python core as the source of truth.
+- Added architecture, Windows shell, and onboarding UX docs.
+- Added a code-only WPF shell under `desktop/ModForge.App` with sample shell data,
+  guided setup, lazy sidecar policy, and startup telemetry.
+- Added `scripts/build_windows_shell.ps1` to build
+  `dist\ModForge.App\ModForge.App.exe` on the current Windows machine.
+
+## Interactive Workflow UI Hardening
+
+- Removed the vertical dry-run sidebar badge and replaced it with horizontal
+  top-bar safety chips.
+- Added a workflow state model from `NoProject` through `RestoreAvailable`.
+- Gated top actions so Scan, Plan, and Confirm game apply unlock only after
+  their prerequisites.
+- Reworked Guided Setup into an interactive wizard with mod-family, folder,
+  scan, plan review, staging, and game apply buttons.
+- Removed milestone/debug wording from user-facing pages.
+- Improved the Mods screen with dark DataGrid headers and a selected-mod detail
+  panel.
+- Expanded the Plan screen into a pre-apply review surface with conflict rows,
+  warnings, a review checkbox, and staging unlock.
+- Expanded Apply & Restore with staging, game confirm, manifest, and restore
+  action zones.
+- Rebuilt and smoke-tested the Windows shell executable.
+
+## Workflow State Consistency Pass
+
+- Reused the shared `WorkflowState` for sidebar readiness, top chips, top
+  actions, Guided Setup, Plan, Apply & Restore, and the status bar.
+- Changed Guided Setup steps to show completed, current, and locked states.
+- Kept Plan review unchecked until the user manually confirms the review.
+- Kept staging locked until Plan review is manually confirmed.
+- Kept game apply locked until staging exists and the explicit confirmation
+  checkbox is checked.
+- Replaced static manifest placeholders with state-derived staging/game
+  manifest labels.
+- Made Restore Available prioritize View Manifest and Preview Restore instead
+  of game apply.
+- Switched WPF DataGrid columns to proportional sizing to avoid unnecessary
+  horizontal scrollbars.
+
+## WinUI 3 Comparison Spike
+
+- Added `desktop\ModForge.WinUI`, a WinUI 3 comparison shell that mirrors the
+  same guided workflow state gates as the WPF shell.
+- Used WinUI `NavigationView` and `ListView` layouts to make the visual and
+  control-stack differences easier to compare.
+- Added `scripts\build_winui_shell.ps1` and `scripts\smoke_winui_shell.ps1`.
+- Installed/verified .NET SDK 9.0.314 for the local WinUI build path.
+- Restored Windows App SDK packages into repo-local cache folders and verified
+  `dist\ModForge.WinUI\ModForge.WinUI.exe` with an execution smoke test.
+
+## WinUI 3 Shell Decision & Polish Pass
+
+- Promoted WinUI 3 to the primary Windows shell candidate while keeping WPF as
+  the fallback until installer/release packaging is proven.
+- Tightened WinUI empty states for NoProject, NoScan, NoPlan, and locked
+  Apply & Restore paths.
+- Improved path display with monospaced, ellipsized path rows.
+- Reduced panel padding/header height and improved Guided Setup step badges.
+- Improved ListView table readability with larger row text and trimmed cells.
+- Added WinUI publish-file checks for `.exe`, `.dll`, `.pri`, and `.xbf`
+  resources.
+- Added `release_smoke.ps1 -IncludeWinUI` for the primary candidate shell.
