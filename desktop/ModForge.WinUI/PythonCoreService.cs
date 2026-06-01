@@ -83,6 +83,40 @@ internal sealed class PythonCoreService
         return await RunProjectCommandAsync(projectFile, cancellationToken);
     }
 
+    public async Task<CoreProject> UpdateProjectPathsAsync(
+        string projectFile,
+        string? gameRoot = null,
+        string? modsDir = null,
+        string? stagingDir = null,
+        CancellationToken cancellationToken = default)
+    {
+        var args = new List<string>
+        {
+            "project",
+            "set-paths",
+            "--project-file",
+            projectFile
+        };
+        if (!string.IsNullOrWhiteSpace(gameRoot))
+        {
+            args.Add("--game-root");
+            args.Add(gameRoot);
+        }
+        if (!string.IsNullOrWhiteSpace(modsDir))
+        {
+            args.Add("--mods-dir");
+            args.Add(modsDir);
+        }
+        if (!string.IsNullOrWhiteSpace(stagingDir))
+        {
+            args.Add("--staging-dir");
+            args.Add(stagingDir);
+        }
+
+        await RunTextAsync(args, cancellationToken);
+        return await RunProjectCommandAsync(projectFile, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<CoreMod>> ScanModsAsync(string projectFile, CancellationToken cancellationToken = default)
     {
         using var payload = await RunJsonAsync(

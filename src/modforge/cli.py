@@ -26,6 +26,7 @@ from modforge.core.manifest_browser import (
 )
 from modforge.core.mod_package import scan_project_mods
 from modforge.core.mod_project import ModProject
+from modforge.core.paths import normalize_path
 from modforge.core.project_portability import audit_project, export_project, import_project
 from modforge.doctor import format_doctor_report, run_doctor
 from modforge.reports.markdown import render_deployment_report
@@ -61,6 +62,13 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     show.add_argument("--json", action="store_true")
     show.set_defaults(handler=handle_project_show)
+
+    set_paths = project_subcommands.add_parser("set-paths", help="Update project path settings")
+    set_paths.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    set_paths.add_argument("--game-root", type=Path)
+    set_paths.add_argument("--mods-dir", type=Path)
+    set_paths.add_argument("--staging-dir", type=Path)
+    set_paths.set_defaults(handler=handle_project_set_paths)
 
     project_export = project_subcommands.add_parser("export", help="Export project metadata only")
     project_export.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
@@ -269,6 +277,26 @@ def handle_project_show(args: argparse.Namespace) -> int:
         print(f"Mods dir: {project.mods_dir}")
         print(f"Staging dir: {project.staging_dir}")
         print(f"Profile: {project.game_profile.display_name} ({project.game_profile.id})")
+    return 0
+
+
+def handle_project_set_paths(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    changed: list[str] = []
+    if args.game_root is not None:
+        project.game_root = normalize_path(args.game_root)
+        changed.append("game_root")
+    if args.mods_dir is not None:
+        project.mods_dir = normalize_path(args.mods_dir)
+        changed.append("mods_dir")
+    if args.staging_dir is not None:
+        project.staging_dir = normalize_path(args.staging_dir)
+        changed.append("staging_dir")
+    if not changed:
+        print("No project paths were changed.")
+        return 0
+    project.save(args.project_file)
+    print("Updated project paths: " + ", ".join(changed))
     return 0
 
 

@@ -106,6 +106,57 @@ class CliTests(unittest.TestCase):
             boss_profile = next(item for item in payload["user_profiles"] if item["id"] == "boss-run")
             self.assertEqual(boss_profile["disabled_mod_ids"], ["modone"])
 
+    def test_cli_project_set_paths_preserves_profile_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            mods = root / "mods"
+            changed_mods = root / "managed" / "Mods"
+            project_file = root / "modforge.project.json"
+            game.mkdir()
+            mods.mkdir()
+            changed_mods.mkdir(parents=True)
+
+            self.assertEqual(
+                self.run_cli(
+                    [
+                        "project",
+                        "init",
+                        "--name",
+                        "Managed",
+                        "--game-root",
+                        str(game),
+                        "--mods-dir",
+                        str(mods),
+                        "--profile",
+                        "sts2-mods",
+                        "--project-file",
+                        str(project_file),
+                    ]
+                )[0],
+                0,
+            )
+            self.assertEqual(self.run_cli(["profile", "disable", "example", "--project-file", str(project_file)])[0], 0)
+
+            self.assertEqual(
+                self.run_cli(
+                    [
+                        "project",
+                        "set-paths",
+                        "--project-file",
+                        str(project_file),
+                        "--mods-dir",
+                        str(changed_mods),
+                    ]
+                )[0],
+                0,
+            )
+
+            payload = json.loads(project_file.read_text(encoding="utf-8"))
+            self.assertEqual(Path(payload["mods_dir"]), changed_mods.resolve())
+            self.assertEqual(payload["game_profile"]["id"], "sts2-mods")
+            self.assertEqual(payload["user_profiles"][0]["disabled_mod_ids"], ["example"])
+
     def test_cli_guided_safe_workflow_preview_and_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

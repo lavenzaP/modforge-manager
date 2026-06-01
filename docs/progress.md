@@ -304,3 +304,7 @@
   Python is loaded, while catalog refresh happens only after a user action.
 - Updated workflow labels from mod family selection to game profile selection so
   adding new profiles no longer widens the Guided Setup row.
+- Updated Guided Setup so choosing a game folder creates or loads a managed
+  project automatically under `Documents\ModForge Manager\Projects\<game>\`,
+  with a default `Mods` folder and a separate `Change mods folder` action for
+  users who want a custom source location.

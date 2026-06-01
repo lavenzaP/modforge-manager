@@ -165,52 +165,99 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        selectedGameFolder = folder;
-        currentProject = null;
-        ResetCoreResults();
-        workflowState = WorkflowState.ModFamilyChosen;
-        AdvanceState(WorkflowState.GameFolderSelected, "Game folder selected. Choose the mods folder next.");
-        ShowPage("Guided Setup");
+        await CreateOrLoadManagedProjectAsync(folder);
     }
 
-    private async Task ChooseModsFolderAsync()
+    private async Task CreateOrLoadManagedProjectAsync(string gameFolder)
     {
-        var folder = await PickFolderAsync();
-        if (string.IsNullOrWhiteSpace(folder))
+        var paths = ManagedProjectPathsFor(gameFolder);
+        Directory.CreateDirectory(paths.ProjectDirectory);
+        Directory.CreateDirectory(paths.ModsDirectory);
+
+        if (File.Exists(paths.ProjectFile))
         {
-            SetStatus("Mods folder selection canceled.");
+            await LoadProjectAsync(paths.ProjectFile);
+            SetStatus("Existing managed project loaded. Scan Mods is now available.");
             return;
         }
 
-        selectedModsFolder = folder;
-        var projectFile = await PickProjectSaveFileAsync(folder);
-        if (string.IsNullOrWhiteSpace(projectFile))
-        {
-            currentProject = null;
-            ResetCoreResults();
-            workflowState = WorkflowState.GameFolderSelected;
-            AdvanceState(WorkflowState.ModsFolderSelected, "Mods folder selected. Save a project file or open an existing project before scanning.");
-            ShowPage("Guided Setup");
-            return;
-        }
+        selectedGameFolder = gameFolder;
+        selectedModsFolder = paths.ModsDirectory;
+        currentProject = null;
+        ResetCoreResults();
 
-        await RunCoreActionAsync("Creating project file through Python...", async () =>
+        await RunCoreActionAsync("Creating managed project and Mods folder...", async () =>
         {
-            var projectName = SuggestedProjectName(selectedGameFolder);
-            var stagingDir = Path.Combine(Path.GetDirectoryName(projectFile) ?? selectedModsFolder, ".modforge", "staging");
             currentProject = await pythonCore.CreateProjectAsync(
-                projectName,
-                selectedGameFolder,
-                selectedModsFolder,
-                stagingDir,
+                SuggestedProjectName(gameFolder),
+                gameFolder,
+                paths.ModsDirectory,
+                paths.StagingDirectory,
                 selectedProfileId,
-                projectFile);
+                paths.ProjectFile);
             selectedFamily = currentProject.ProfileName;
             selectedProfileId = currentProject.ProfileId;
             selectedGameFolder = currentProject.GameRoot;
             selectedModsFolder = currentProject.ModsDir;
             workflowState = WorkflowState.ModsFolderSelected;
-            SetStatus("Project created. Scan Mods is now available.");
+            SetStatus("Managed project created with a default Mods folder. Scan Mods is now available.");
+            ShowPage("Guided Setup");
+        });
+    }
+
+    private async Task ChangeModsFolderAsync()
+    {
+        var folder = await PickFolderAsync();
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            SetStatus("Mods folder change canceled.");
+            return;
+        }
+
+        if (currentProject == null)
+        {
+            if (string.IsNullOrWhiteSpace(selectedGameFolder))
+            {
+                SetStatus("Choose a game folder before changing the managed Mods folder.");
+                return;
+            }
+
+            var paths = ManagedProjectPathsFor(selectedGameFolder);
+            Directory.CreateDirectory(paths.ProjectDirectory);
+            await RunCoreActionAsync("Creating project with the selected Mods folder...", async () =>
+            {
+                currentProject = await pythonCore.CreateProjectAsync(
+                    SuggestedProjectName(selectedGameFolder),
+                    selectedGameFolder,
+                    folder,
+                    paths.StagingDirectory,
+                    selectedProfileId,
+                    paths.ProjectFile);
+                selectedFamily = currentProject.ProfileName;
+                selectedProfileId = currentProject.ProfileId;
+                selectedGameFolder = currentProject.GameRoot;
+                selectedModsFolder = currentProject.ModsDir;
+                workflowState = WorkflowState.ModsFolderSelected;
+                SetStatus("Project created with the selected Mods folder. Scan Mods is now available.");
+                ShowPage("Guided Setup");
+            });
+            return;
+        }
+
+        selectedModsFolder = folder;
+        var projectFile = currentProject.ProjectFile;
+        await RunCoreActionAsync("Changing project Mods folder...", async () =>
+        {
+            currentProject = await pythonCore.UpdateProjectPathsAsync(
+                projectFile,
+                modsDir: folder);
+            selectedFamily = currentProject.ProfileName;
+            selectedProfileId = currentProject.ProfileId;
+            selectedGameFolder = currentProject.GameRoot;
+            selectedModsFolder = currentProject.ModsDir;
+            ResetCoreResults();
+            workflowState = WorkflowState.ModsFolderSelected;
+            SetStatus("Mods folder changed. Scan Mods is now available.");
             ShowPage("Guided Setup");
         });
     }
@@ -437,24 +484,6 @@ public sealed partial class MainWindow : Window
         return file?.Path;
     }
 
-    private async Task<string?> PickProjectSaveFileAsync(string modsFolder)
-    {
-        var picker = new FileSavePicker
-        {
-            SuggestedFileName = "modforge.project",
-            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
-        };
-        picker.FileTypeChoices.Add("ModForge project", new List<string> { ".json" });
-        if (Directory.Exists(modsFolder))
-        {
-            picker.SuggestedFileName = Path.GetFileName(Path.GetFullPath(modsFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) + ".modforge.project";
-        }
-
-        InitializePicker(picker);
-        var file = await picker.PickSaveFileAsync();
-        return file?.Path;
-    }
-
     private async Task<string?> PickFolderAsync()
     {
         var picker = new FolderPicker
@@ -576,8 +605,8 @@ public sealed partial class MainWindow : Window
         steps.Children.Add(Text("Interactive setup", 22, SemiBoldWeight, White));
         steps.Children.Add(Spaced("Work left to right through each row. Locked actions stay disabled until the shared workflow state reaches the prerequisite.", 13, Secondary));
         steps.Children.Add(CompactWizardStep(1, "Choose game profile", ProfileStepDetail(), ProfilePicker(), WorkflowState.ModFamilyChosen, WorkflowState.NoProject));
-        steps.Children.Add(CompactWizardStep(2, "Select game folder", selectedGameFolder.Length > 0 ? selectedGameFolder : "Choose the game root. No game files are changed while selecting.", WizardButton("Choose game folder", IsCurrentStep(WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen), async (_, _) => await ChooseGameFolderAsync()), WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen));
-        steps.Children.Add(CompactWizardStep(3, "Select mods folder", selectedModsFolder.Length > 0 ? selectedModsFolder : "Choose the folder or archive collection to inspect, then save a project file.", WizardButton("Choose mods folder", IsCurrentStep(WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected), async (_, _) => await ChooseModsFolderAsync()), WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected));
+        steps.Children.Add(CompactWizardStep(2, "Select game folder", selectedGameFolder.Length > 0 ? selectedGameFolder + " · managed project is automatic" : "Choose the game root. ModForge will create the project and default Mods folder.", WizardButton(selectedGameFolder.Length > 0 ? "Change game folder" : "Choose game folder", IsCurrentStep(WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen) || HasReached(WorkflowState.GameFolderSelected), async (_, _) => await ChooseGameFolderAsync()), WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen));
+        steps.Children.Add(CompactWizardStep(3, "Mods folder", selectedModsFolder.Length > 0 ? selectedModsFolder : "Default: Documents\\ModForge Manager\\Projects\\<game>\\Mods", WizardButton("Change mods folder", HasReached(WorkflowState.GameFolderSelected) && !isBusy, async (_, _) => await ChangeModsFolderAsync()), WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected));
         steps.Children.Add(CompactWizardStep(4, "Scan mods", "Read-only Python scan. No files will be changed.", WizardButton(HasReached(WorkflowState.Scanned) ? "Scan again" : "Scan now", CanScan(), async (_, _) => await ScanProjectAsync()), WorkflowState.Scanned, WorkflowState.ModsFolderSelected));
         steps.Children.Add(CompactWizardStep(5, "Review plan and conflicts", "Create a dry-run plan, then inspect winners, overwritten destinations, and warnings.", WizardButton(HasReached(WorkflowState.PlanReady) ? "Rebuild plan" : "Create plan", CanCreatePlan(), async (_, _) => await CreatePlanAsync()), WorkflowState.PlanReviewed, WorkflowState.Scanned));
         steps.Children.Add(CompactWizardStep(6, "Apply to staging", "First write step. The game folder is still untouched.", WizardButton(StagingActionLabel(), CanApplyToStaging(), async (_, _) => await ApplyStagingAsync()), WorkflowState.Staged, WorkflowState.PlanReviewed));
@@ -1049,14 +1078,26 @@ public sealed partial class MainWindow : Window
 
     private UIElement ProjectSummaryPanel()
     {
-        return Panel(Stack(
-            Text(currentProject?.Name ?? (HasReached(WorkflowState.ProjectOpened) ? "Project draft" : "No project open"), 22, SemiBoldWeight, White),
-            HasReached(WorkflowState.ProjectOpened)
-                ? PathLine("Project file", currentProject?.ProjectFile ?? "Save or open a project file before scanning")
-                : Spaced("Open a project to begin the safe workflow.", 12, Secondary),
-            Line("Profile", HasReached(WorkflowState.ModFamilyChosen) ? selectedFamily : "Not selected", AccentBlue),
-            Line("Enabled mods", HasReached(WorkflowState.Scanned) ? $"{mods.Count(item => item.Enabled)} / {mods.Count}" : "Scan required", HasReached(WorkflowState.Scanned) ? AccentGreen : Secondary),
-            Line("Apply to game", GameWriteLabel(), HasReached(WorkflowState.RestoreAvailable) ? AccentGreen : HasReached(WorkflowState.Staged) ? AccentAmber : Secondary)));
+        var stack = Stack(
+            Text(currentProject?.Name ?? (HasReached(WorkflowState.ProjectOpened) ? "Project draft" : "No project open"), 22, SemiBoldWeight, White));
+        if (HasReached(WorkflowState.ProjectOpened))
+        {
+            stack.Children.Add(PathLine("Project file", currentProject?.ProjectFile ?? "Managed project will be created after game folder selection"));
+            stack.Children.Add(PathLine("Mods folder", selectedModsFolder.Length > 0 ? selectedModsFolder : "Managed Mods folder will be created automatically"));
+            if (currentProject != null)
+            {
+                stack.Children.Add(ButtonRow(WizardButton("Change mods folder", !isBusy, async (_, _) => await ChangeModsFolderAsync())));
+            }
+        }
+        else
+        {
+            stack.Children.Add(Spaced("Open a project or start Guided Setup. New projects get a managed Mods folder automatically.", 12, Secondary));
+        }
+
+        stack.Children.Add(Line("Profile", HasReached(WorkflowState.ModFamilyChosen) ? selectedFamily : "Not selected", AccentBlue));
+        stack.Children.Add(Line("Enabled mods", HasReached(WorkflowState.Scanned) ? $"{mods.Count(item => item.Enabled)} / {mods.Count}" : "Scan required", HasReached(WorkflowState.Scanned) ? AccentGreen : Secondary));
+        stack.Children.Add(Line("Apply to game", GameWriteLabel(), HasReached(WorkflowState.RestoreAvailable) ? AccentGreen : HasReached(WorkflowState.Staged) ? AccentAmber : Secondary));
+        return Panel(stack);
     }
 
     private UIElement NextActionCard()
@@ -1533,6 +1574,34 @@ public sealed partial class MainWindow : Window
         return string.IsNullOrWhiteSpace(name) ? "ModForge Project" : name;
     }
 
+    private static ManagedProjectPaths ManagedProjectPathsFor(string gameFolder)
+    {
+        var projectName = SuggestedProjectName(gameFolder);
+        var projectDirectory = Path.Combine(ManagedProjectsRoot(), SafeFolderName(projectName));
+        return new ManagedProjectPaths(
+            ProjectDirectory: projectDirectory,
+            ProjectFile: Path.Combine(projectDirectory, "modforge.project.json"),
+            ModsDirectory: Path.Combine(projectDirectory, "Mods"),
+            StagingDirectory: Path.Combine(projectDirectory, ".modforge", "staging"));
+    }
+
+    private static string ManagedProjectsRoot()
+    {
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (string.IsNullOrWhiteSpace(documents))
+        {
+            documents = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        }
+        return Path.Combine(documents, "ModForge Manager", "Projects");
+    }
+
+    private static string SafeFolderName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
+        var sanitized = new string(value.Select(character => invalid.Contains(character) ? '_' : character).ToArray()).Trim();
+        return string.IsNullOrWhiteSpace(sanitized) ? "ModForge Project" : sanitized;
+    }
+
     private static string ShortPath(string path, int maxLength)
     {
         if (path.Length <= maxLength)
@@ -1578,7 +1647,7 @@ public sealed partial class MainWindow : Window
             WorkflowState.NoProject => "Open a project or start Guided Setup.",
             WorkflowState.ProjectOpened => "Choose a game profile.",
             WorkflowState.ModFamilyChosen => "Choose the game folder.",
-            WorkflowState.GameFolderSelected => "Choose the mods folder.",
+            WorkflowState.GameFolderSelected => "Create the managed Mods folder.",
             WorkflowState.ModsFolderSelected => "Scan mods.",
             WorkflowState.Scanned => "Create and review the plan.",
             WorkflowState.PlanReady => "Review conflicts and warnings.",
@@ -1780,6 +1849,12 @@ public sealed partial class MainWindow : Window
                 profile.IsExperimental);
         }
     }
+
+    private sealed record ManagedProjectPaths(
+        string ProjectDirectory,
+        string ProjectFile,
+        string ModsDirectory,
+        string StagingDirectory);
 
     private sealed record ConflictRow(
         string Destination,

@@ -55,9 +55,9 @@ Safe path:
 
 ## Guided Setup Steps
 
-1. Choose mod family.
-2. Select game folder.
-3. Select mods folder.
+1. Choose game profile.
+2. Select game folder and create/load the managed project automatically.
+3. Use the managed Mods folder, or change it explicitly.
 4. Scan mods.
 5. Review plan and conflicts.
 6. Apply to staging.
