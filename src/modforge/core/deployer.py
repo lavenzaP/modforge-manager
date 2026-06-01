@@ -186,6 +186,12 @@ def _write_operation_source(package: ModPackage, relative_path: str, destination
     if package.detected_type == "zip":
         destination.write_bytes(zip_adapter.read_file(package.path, relative_path))
         return
+    if package.detected_type in {"godot_pck", "unreal_pak"}:
+        if package.extracted_path is None:
+            raise ValueError(f"Package was not extracted before deployment: {package.name}")
+        source = _safe_source(package.extracted_path, relative_path)
+        shutil.copy2(source, destination)
+        return
     raise ValueError(f"Package type cannot be staged yet: {package.detected_type}")
 
 
@@ -194,3 +200,13 @@ def _normalize_manifest_path(path: str) -> str:
     while normalized.startswith("./"):
         normalized = normalized[2:]
     return normalized.lstrip("/")
+
+
+def _safe_source(root: Path, relative_path: str) -> Path:
+    source_root = root.resolve(strict=False)
+    source = (source_root / relative_path).resolve(strict=False)
+    try:
+        source.relative_to(source_root)
+    except ValueError as exc:
+        raise ValueError(f"Refusing to read outside extracted package: {relative_path}") from exc
+    return source

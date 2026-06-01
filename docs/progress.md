@@ -81,3 +81,14 @@
   folder/script extender layouts, and Cyberpunk 2077 REDmod/archive layouts.
 - Added deployment-plan tests for each new profile template.
 - Expanded tests from 24 to 28 stdlib `unittest` cases.
+
+## External PCK/PAK Extraction
+
+- Added external-tool backed extraction for `godot_pck` and `unreal_pak`
+  packages.
+- Project scans now use configured tool paths/templates and extract into
+  `.modforge/extracted`.
+- Staging/game apply can copy files from extracted PCK/PAK workspaces through
+  the same safe destination checks as loose folders and ZIPs.
+- Tool checks now understand command templates with `{archive}` and `{output}`.
+- Expanded tests from 28 to 31 stdlib `unittest` cases.

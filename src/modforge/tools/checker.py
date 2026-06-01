@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import shlex
 
 from modforge.tools.registry import KNOWN_TOOLS
 
@@ -30,7 +31,23 @@ def check_tools(configured_paths: dict[str, str]) -> list[ToolCheck]:
     checks: list[ToolCheck] = []
     for tool_id, label in KNOWN_TOOLS.items():
         raw_path = configured_paths.get(tool_id, "")
-        exists = bool(raw_path) and Path(raw_path).expanduser().exists()
+        exists = bool(raw_path) and _configured_tool_exists(raw_path)
         warning = "" if exists else f"{label} is not configured or the path does not exist."
         checks.append(ToolCheck(tool_id, label, raw_path, exists, warning))
     return checks
+
+
+def _configured_tool_exists(raw_path: str) -> bool:
+    expanded = Path(raw_path).expanduser()
+    if expanded.exists():
+        return True
+    try:
+        parts = shlex.split(raw_path, posix=False)
+    except ValueError:
+        return False
+    if not parts:
+        return False
+    executable = parts[0]
+    if len(executable) >= 2 and executable[0] == executable[-1] and executable[0] in {"'", '"'}:
+        executable = executable[1:-1]
+    return Path(executable).expanduser().exists()

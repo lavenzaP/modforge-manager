@@ -13,6 +13,8 @@ tool checks, and fake-fixture-tested core behavior.
 - Create and load a modding project file.
 - Choose a built-in game profile template.
 - Scan loose mod folders and ZIP mod packages.
+- Extract PCK/PAK packages through configured external tools before scanning
+  and deployment planning.
 - Detect destination conflicts between enabled mods.
 - Generate a dry-run deployment plan.
 - Render a Markdown report.
@@ -60,6 +62,7 @@ python -m modforge.cli profile create boss-run --name "Boss Run" --copy-from def
 python -m modforge.cli profile switch boss-run
 python -m modforge.cli profile list
 python -m modforge.cli tools check
+python -m modforge.cli tools set unreal_pak "C:\Tools\UnrealPak.exe {archive} -Extract {output}"
 python -m modforge.cli apply-staging --yes
 python -m modforge.cli apply-game --yes
 python -m modforge.cli restore --manifest .modforge\manifests\<manifest-id>.json --yes
@@ -114,6 +117,8 @@ ruff format .
 - Restore requires `--yes` and a manifest path. Add one or more `--path`
   options to restore selected destination paths only.
 - ZIP entries with unsafe paths are ignored and reported as warnings.
+- PCK/PAK extraction writes only under `.modforge\extracted` and the extracted
+  files still pass through the same safe staging/game destination checks.
 - Do not commit real game files, mod archives, crash dumps, DLLs, or executables.
 - Use synthetic fixtures only.
 - Unsupported containers fail with clear warnings.

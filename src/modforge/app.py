@@ -10,7 +10,7 @@ from modforge.core.deployer import apply_to_game, apply_to_staging, restore_mani
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.game_profile import builtin_profiles
 from modforge.core.manifest import InstallManifest
-from modforge.core.mod_package import ModPackage, scan_mods
+from modforge.core.mod_package import ModPackage, scan_project_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import ToolCheck, check_tools
@@ -177,7 +177,7 @@ class ModForgeApp:
         project = self._require_project()
         if project is None:
             return
-        self.packages = scan_mods(project.mods_dir, project.active_profile())
+        self.packages = scan_project_mods(project)
         self.refresh_project_info()
         self.refresh_mod_table()
         lines = [f"Mods in {project.mods_dir}:", ""]
@@ -352,7 +352,7 @@ class ModForgeApp:
         if project is None:
             return []
         if not self.packages:
-            self.packages = scan_mods(project.mods_dir, project.active_profile())
+            self.packages = scan_project_mods(project)
         return self.packages
 
     def selected_package(self) -> ModPackage | None:

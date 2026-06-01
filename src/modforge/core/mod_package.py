@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from modforge.containers import zip_adapter
+from modforge.containers import external_archive, zip_adapter
 from modforge.containers.detector import detect_container
 from modforge.core.paths import as_posix_relative, iter_files, normalize_path
 from modforge.core.user_profile import UserProfile
+
+if TYPE_CHECKING:
+    from modforge.core.mod_project import ModProject
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +34,7 @@ class ModPackage:
     detected_type: str
     files: list[ModFile] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    extracted_path: Path | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -41,10 +46,25 @@ class ModPackage:
             "detected_type": self.detected_type,
             "files": [file.to_dict() for file in self.files],
             "warnings": self.warnings,
+            "extracted_path": str(self.extracted_path) if self.extracted_path else "",
         }
 
 
-def scan_mods(mods_dir: str | Path, user_profile: UserProfile | None = None) -> list[ModPackage]:
+def scan_project_mods(project: "ModProject") -> list[ModPackage]:
+    return scan_mods(
+        project.mods_dir,
+        project.active_profile(),
+        external_tools=project.external_tools,
+        extraction_dir=project.staging_dir.parent / "extracted",
+    )
+
+
+def scan_mods(
+    mods_dir: str | Path,
+    user_profile: UserProfile | None = None,
+    external_tools: dict[str, str] | None = None,
+    extraction_dir: Path | None = None,
+) -> list[ModPackage]:
     root = normalize_path(mods_dir)
     if not root.exists():
         return []
@@ -55,6 +75,7 @@ def scan_mods(mods_dir: str | Path, user_profile: UserProfile | None = None) -> 
             continue
         detected = detect_container(item)
         warnings = list(detected.warnings)
+        extracted_path: Path | None = None
         if detected.container_type == "loose_folder":
             files = _scan_loose_files(item)
         elif detected.container_type == "zip" and detected.supported:
@@ -64,9 +85,22 @@ def scan_mods(mods_dir: str | Path, user_profile: UserProfile | None = None) -> 
                 for relative_path, size in file_entries
             ]
             warnings.extend(zip_warnings)
+        elif detected.container_type in external_archive.TOOL_IDS:
+            result = external_archive.extract_archive(
+                item,
+                detected.container_type,
+                external_tools or {},
+                extraction_dir,
+            )
+            files = [
+                ModFile(relative_path=relative_path, size=size)
+                for relative_path, size in result.files
+            ]
+            extracted_path = result.extracted_path
+            warnings.extend(result.warnings)
         else:
             files = []
-        if detected.supported is False:
+        if detected.supported is False and not files:
             warnings.append(f"{detected.container_type} detection is present, extraction is deferred.")
         packages.append(
             ModPackage(
@@ -82,6 +116,7 @@ def scan_mods(mods_dir: str | Path, user_profile: UserProfile | None = None) -> 
                 detected_type=detected.container_type,
                 files=files,
                 warnings=warnings,
+                extracted_path=extracted_path,
             )
         )
     return packages

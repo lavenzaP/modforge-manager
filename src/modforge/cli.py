@@ -10,7 +10,7 @@ from modforge import __version__
 from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.game_profile import builtin_profiles
-from modforge.core.mod_package import scan_mods
+from modforge.core.mod_package import scan_project_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import check_tools
@@ -180,7 +180,7 @@ def handle_profiles(args: argparse.Namespace) -> int:
 
 def handle_scan_mods(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
-    packages = scan_mods(project.mods_dir, project.active_profile())
+    packages = scan_project_mods(project)
     payload = [package.to_dict() for package in packages]
     if args.json:
         print(json.dumps(payload, indent=2))
@@ -192,7 +192,7 @@ def handle_scan_mods(args: argparse.Namespace) -> int:
 
 def handle_plan(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
-    plan = build_deployment_plan(project, scan_mods(project.mods_dir, project.active_profile()))
+    plan = build_deployment_plan(project, scan_project_mods(project))
     if args.json:
         print(json.dumps(plan.to_dict(), indent=2))
     else:
@@ -205,7 +205,7 @@ def handle_plan(args: argparse.Namespace) -> int:
 
 def handle_report(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
-    plan = build_deployment_plan(project, scan_mods(project.mods_dir, project.active_profile()))
+    plan = build_deployment_plan(project, scan_project_mods(project))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(render_deployment_report(project, plan), encoding="utf-8")
     print(f"Wrote {args.output}")
@@ -311,7 +311,7 @@ def handle_apply_staging(args: argparse.Namespace) -> int:
         return 2
 
     project = ModProject.load(args.project_file)
-    packages = scan_mods(project.mods_dir, project.active_profile())
+    packages = scan_project_mods(project)
     plan = build_deployment_plan(project, packages)
     manifest = apply_to_staging(project, plan, packages)
     if args.json:
@@ -330,7 +330,7 @@ def handle_apply_game(args: argparse.Namespace) -> int:
         return 2
 
     project = ModProject.load(args.project_file)
-    packages = scan_mods(project.mods_dir, project.active_profile())
+    packages = scan_project_mods(project)
     plan = build_deployment_plan(project, packages)
     manifest = apply_to_game(project, plan, packages)
     if args.json:
