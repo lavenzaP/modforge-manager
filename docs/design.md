@@ -16,6 +16,9 @@ stable.
 The current GUI is a lightweight `tkinter` shell. It should remain a thin caller
 of core functions: project creation/loading, mod scanning, profile edits,
 planning, staging/game apply, restore, and report saving.
+The GUI table layer is still intentionally small, but it supports sortable mod
+columns, detailed scan warnings, external-tool validation details, and progress
+status around longer core calls.
 
 User profiles are per-project mod sets. They store disabled mod ids and priority
 order separately from the selected game profile, so one project can keep

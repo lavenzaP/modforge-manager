@@ -20,11 +20,11 @@
 - Richer backup browser and selective restore UI. Done.
 - More game-specific profile templates. Done.
 - Real archive extraction for PCK/PAK through external tools. Done.
+- Real GUI tables, tool validation details, and progress surfaces. Done.
 - Synthetic fixture tests. Done.
 
 ## Phase 2
 
-- Real GUI tables, tool validation details, and progress surfaces.
 - Optional PySide6 UI.
 
 ## Deferred

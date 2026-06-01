@@ -30,6 +30,8 @@ tool checks, and fake-fixture-tested core behavior.
   toggling enabled state, changing priority, planning, reporting, applying, and
   restoring.
 - Configure and check external tool paths from the GUI.
+- Sort GUI mod tables, inspect scan warnings, and see progress/status updates
+  during longer operations.
 
 ## Quick Start
 

@@ -33,6 +33,8 @@ class ModForgeApp:
         self.project: ModProject | None = None
         self.project_path: Path | None = None
         self.packages: list[ModPackage] = []
+        self.mod_sort_column = "priority"
+        self.mod_sort_reverse = False
 
         self.status = tk.StringVar(value="Open a modforge.project.json file to begin.")
         self._build()
@@ -74,12 +76,12 @@ class ModForgeApp:
             show="tree headings",
             selectmode="browse",
         )
-        self.mod_table.heading("#0", text="Mod")
-        self.mod_table.heading("enabled", text="Enabled")
-        self.mod_table.heading("priority", text="Priority")
-        self.mod_table.heading("type", text="Type")
-        self.mod_table.heading("files", text="Files")
-        self.mod_table.heading("warnings", text="Warnings")
+        self.mod_table.heading("#0", text="Mod", command=lambda: self.set_mod_sort("name"))
+        self.mod_table.heading("enabled", text="Enabled", command=lambda: self.set_mod_sort("enabled"))
+        self.mod_table.heading("priority", text="Priority", command=lambda: self.set_mod_sort("priority"))
+        self.mod_table.heading("type", text="Type", command=lambda: self.set_mod_sort("type"))
+        self.mod_table.heading("files", text="Files", command=lambda: self.set_mod_sort("files"))
+        self.mod_table.heading("warnings", text="Warnings", command=lambda: self.set_mod_sort("warnings"))
         self.mod_table.column("#0", width=280, anchor="w")
         self.mod_table.column("enabled", width=80, anchor="center")
         self.mod_table.column("priority", width=80, anchor="center")
@@ -120,6 +122,8 @@ class ModForgeApp:
         content.add(output_frame, weight=1)
 
         ttk.Label(frame, textvariable=self.status).grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        self.progress = ttk.Progressbar(frame, mode="indeterminate")
+        self.progress.grid(row=4, column=0, sticky="ew", pady=(4, 0))
 
     def new_project(self) -> None:
         name = simpledialog.askstring("New ModForge Project", "Project name:")
@@ -177,25 +181,30 @@ class ModForgeApp:
         project = self._require_project()
         if project is None:
             return
-        self.packages = scan_project_mods(project)
-        self.refresh_project_info()
-        self.refresh_mod_table()
-        lines = [f"Mods in {project.mods_dir}:", ""]
-        for package in self.packages:
-            state = "on" if package.enabled else "off"
-            lines.append(
-                f"{package.priority:03d} {state:3} {package.name} "
-                f"({package.detected_type}, {len(package.files)} files)"
-            )
-        self._write("\n".join(lines))
+        self._start_busy("Scanning mods...")
+        try:
+            self.packages = scan_project_mods(project)
+            self.refresh_project_info()
+            self.refresh_mod_table()
+            self._write(self.scan_summary(project, self.packages))
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Scan failed", error)
+            return
+        self._stop_busy(f"Scanned {len(self.packages)} mods.")
 
     def plan(self) -> None:
         project = self._require_project()
         if project is None:
             return
-        packages = self.current_packages()
-        plan = build_deployment_plan(project, packages)
-        self._write(render_deployment_report(project, plan))
+        self._start_busy("Building deployment plan...")
+        try:
+            packages = self.current_packages()
+            plan = build_deployment_plan(project, packages)
+            self._write(render_deployment_report(project, plan))
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Plan failed", error)
+            return
+        self._stop_busy(f"Planned {len(plan.operations)} operations.")
 
     def save_report(self) -> None:
         project = self._require_project()
@@ -208,10 +217,15 @@ class ModForgeApp:
         )
         if not selected:
             return
-        packages = self.current_packages()
-        plan = build_deployment_plan(project, packages)
-        Path(selected).write_text(render_deployment_report(project, plan), encoding="utf-8")
-        self.status.set(f"Wrote {selected}")
+        self._start_busy("Writing deployment report...")
+        try:
+            packages = self.current_packages()
+            plan = build_deployment_plan(project, packages)
+            Path(selected).write_text(render_deployment_report(project, plan), encoding="utf-8")
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Report failed", error)
+            return
+        self._stop_busy(f"Wrote {selected}")
 
     def apply_staging(self) -> None:
         project = self._require_project()
@@ -219,11 +233,16 @@ class ModForgeApp:
             return
         if not messagebox.askyesno("Apply staging", "Copy winning files into the staging directory?"):
             return
-        packages = self.current_packages()
-        plan = build_deployment_plan(project, packages)
-        manifest = apply_to_staging(project, plan, packages)
-        self._write(self.manifest_summary(manifest.to_dict()))
-        self.status.set(f"Applied staging manifest {manifest.manifest_id}")
+        self._start_busy("Applying to staging...")
+        try:
+            packages = self.current_packages()
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_staging(project, plan, packages)
+            self._write(self.manifest_summary(manifest.to_dict()))
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Staging apply failed", error)
+            return
+        self._stop_busy(f"Applied staging manifest {manifest.manifest_id}")
 
     def apply_game(self) -> None:
         project = self._require_project()
@@ -235,11 +254,16 @@ class ModForgeApp:
         )
         if not confirmed:
             return
-        packages = self.current_packages()
-        plan = build_deployment_plan(project, packages)
-        manifest = apply_to_game(project, plan, packages)
-        self._write(self.manifest_summary(manifest.to_dict()))
-        self.status.set(f"Applied game manifest {manifest.manifest_id}")
+        self._start_busy("Applying to game root...")
+        try:
+            packages = self.current_packages()
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_game(project, plan, packages)
+            self._write(self.manifest_summary(manifest.to_dict()))
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Game apply failed", error)
+            return
+        self._stop_busy(f"Applied game manifest {manifest.manifest_id}")
 
     def restore(self) -> None:
         project = self._require_project()
@@ -258,9 +282,14 @@ class ModForgeApp:
         target = "selected files" if selected_paths else "all restorable files"
         if not messagebox.askyesno("Restore manifest", f"Restore {target} from {manifest_path.name}?"):
             return
-        manifest = restore_manifest(manifest_path, selected_paths)
-        self._write(self.manifest_summary(manifest.to_dict()))
-        self.status.set(f"Restored manifest {manifest.manifest_id}")
+        self._start_busy("Restoring manifest...")
+        try:
+            manifest = restore_manifest(manifest_path, selected_paths)
+            self._write(self.manifest_summary(manifest.to_dict()))
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Restore failed", error)
+            return
+        self._stop_busy(f"Restored manifest {manifest.manifest_id}")
 
     def configure_tools(self) -> None:
         project = self._require_project()
@@ -330,9 +359,17 @@ class ModForgeApp:
             f"user set: {self.project.active_profile().id} | staging: {self.project.staging_dir}"
         )
 
+    def set_mod_sort(self, column: str) -> None:
+        if self.mod_sort_column == column:
+            self.mod_sort_reverse = not self.mod_sort_reverse
+        else:
+            self.mod_sort_column = column
+            self.mod_sort_reverse = False
+        self.refresh_mod_table()
+
     def refresh_mod_table(self) -> None:
         self.mod_table.delete(*self.mod_table.get_children())
-        for package in sorted(self.packages, key=lambda item: item.priority):
+        for package in self.sorted_packages(self.packages, self.mod_sort_column, self.mod_sort_reverse):
             self.mod_table.insert(
                 "",
                 "end",
@@ -397,6 +434,41 @@ class ModForgeApp:
         return "\n".join(lines)
 
     @staticmethod
+    def sorted_packages(packages: list[ModPackage], column: str, reverse: bool = False) -> list[ModPackage]:
+        def key(package: ModPackage) -> tuple[object, str]:
+            fallback = package.name.casefold()
+            if column == "name":
+                return (fallback, fallback)
+            if column == "enabled":
+                return (package.enabled, fallback)
+            if column == "priority":
+                return (package.priority, fallback)
+            if column == "type":
+                return (package.detected_type, fallback)
+            if column == "files":
+                return (len(package.files), fallback)
+            if column == "warnings":
+                return (len(package.warnings), fallback)
+            return (package.priority, fallback)
+
+        return sorted(packages, key=key, reverse=reverse)
+
+    @staticmethod
+    def scan_summary(project: ModProject, packages: list[ModPackage]) -> str:
+        lines = [f"Mods in {project.mods_dir}:", ""]
+        for package in ModForgeApp.sorted_packages(packages, "priority"):
+            state = "on" if package.enabled else "off"
+            lines.append(
+                f"{package.priority:03d} {state:3} {package.name} "
+                f"({package.detected_type}, {len(package.files)} files)"
+            )
+            if package.extracted_path:
+                lines.append(f"    extracted: {package.extracted_path}")
+            for warning in package.warnings:
+                lines.append(f"    warning: {warning}")
+        return "\n".join(lines)
+
+    @staticmethod
     def manifest_record_rows(manifest: InstallManifest) -> list[tuple[str, str, str, str]]:
         rows = []
         for record in manifest.records:
@@ -415,6 +487,21 @@ class ModForgeApp:
     def _write(self, text: str) -> None:
         self.output.delete("1.0", tk.END)
         self.output.insert(tk.END, text)
+
+    def _start_busy(self, label: str) -> None:
+        self.status.set(label)
+        self.progress.start(8)
+        self.root.update_idletasks()
+
+    def _stop_busy(self, label: str) -> None:
+        self.progress.stop()
+        self.status.set(label)
+        self.root.update_idletasks()
+
+    def _show_error(self, title: str, error: Exception) -> None:
+        self.progress.stop()
+        self.status.set(title)
+        messagebox.showerror("ModForge Manager", f"{title}: {error}")
 
 
 class ToolSettingsDialog:
@@ -473,11 +560,7 @@ class ToolSettingsDialog:
 
     def check(self) -> None:
         checks = check_tools(self.current_paths())
-        lines = []
-        for check in checks:
-            state = "OK" if check.exists else "missing"
-            lines.append(f"{check.label}: {state}")
-        self.check_text.set("\n".join(lines))
+        self.check_text.set(ModForgeApp.tool_checks_summary(checks))
 
     def save(self) -> None:
         self.result = self.current_paths()

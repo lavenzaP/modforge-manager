@@ -92,3 +92,14 @@
   the same safe destination checks as loose folders and ZIPs.
 - Tool checks now understand command templates with `{archive}` and `{output}`.
 - Expanded tests from 28 to 31 stdlib `unittest` cases.
+
+## GUI Polish Pass
+
+- Mod tables can now sort by name, enabled state, priority, package type, file
+  count, or warning count.
+- Scan output shows extracted package locations and per-package warnings.
+- GUI scan, plan, report, apply, and restore actions now show progress/status
+  updates and surface guarded error dialogs.
+- Tool validation details now show the same OK/missing path information in the
+  dialog as the output panel.
+- Expanded tests from 31 to 33 stdlib `unittest` cases.
