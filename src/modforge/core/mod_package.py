@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from modforge.containers import zip_adapter
 from modforge.containers.detector import detect_container
 from modforge.core.paths import as_posix_relative, iter_files, normalize_path
 from modforge.core.user_profile import UserProfile
@@ -53,8 +54,18 @@ def scan_mods(mods_dir: str | Path, user_profile: UserProfile | None = None) -> 
         if item.name.startswith("."):
             continue
         detected = detect_container(item)
-        files = _scan_loose_files(item) if detected.container_type == "loose_folder" else []
         warnings = list(detected.warnings)
+        if detected.container_type == "loose_folder":
+            files = _scan_loose_files(item)
+        elif detected.container_type == "zip" and detected.supported:
+            file_entries, zip_warnings = zip_adapter.list_files(item)
+            files = [
+                ModFile(relative_path=relative_path, size=size)
+                for relative_path, size in file_entries
+            ]
+            warnings.extend(zip_warnings)
+        else:
+            files = []
         if detected.supported is False:
             warnings.append(f"{detected.container_type} detection is present, extraction is deferred.")
         packages.append(

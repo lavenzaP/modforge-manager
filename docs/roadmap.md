@@ -4,6 +4,7 @@
 
 - Project registry. Done.
 - Loose folder scanning. Done.
+- ZIP package scanning and staging extraction. Done.
 - User profile enabled/disabled state and priority order. Done.
 - Dry-run deployment plans. Done.
 - Conflict reports. Done.
@@ -20,7 +21,7 @@
 - More game profile templates.
 - Real GUI tables and progress surfaces.
 - Optional PySide6 UI.
-- ZIP listing/extraction adapter.
+- Real archive extraction for PCK/PAK through external tools.
 
 ## Deferred
 

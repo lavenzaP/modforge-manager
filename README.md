@@ -11,7 +11,7 @@ tool checks, and fake-fixture-tested core behavior.
 ## Current Scope
 
 - Create and load a modding project file.
-- Scan loose mod folders and known container filenames.
+- Scan loose mod folders and ZIP mod packages.
 - Detect destination conflicts between enabled mods.
 - Generate a dry-run deployment plan.
 - Render a Markdown report.
@@ -78,6 +78,7 @@ ruff format .
 
 - Dry-run by default.
 - Staging apply writes only to the configured staging directory.
+- ZIP entries with unsafe paths are ignored and reported as warnings.
 - Do not commit real game files, mod archives, crash dumps, DLLs, or executables.
 - Use synthetic fixtures only.
 - Unsupported containers fail with clear warnings.

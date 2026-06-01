@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
+from modforge.containers import zip_adapter
 from modforge.core.deployment_plan import DeploymentPlan
 from modforge.core.manifest import InstallManifest
 from modforge.core.mod_package import ModPackage
@@ -31,14 +32,13 @@ def apply_to_staging(project: ModProject, plan: DeploymentPlan, packages: list[M
             continue
 
         package = package_by_name[operation.source_mod]
-        source = package.path / operation.source_path
         destination = _safe_destination(staging_dir, operation.destination_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
             manifest.overwritten_files.append(operation.destination_path)
         else:
             manifest.copied_files.append(operation.destination_path)
-        shutil.copy2(source, destination)
+        _write_operation_source(package, operation.source_path, destination)
 
     manifest_path = staging_dir / ".modforge-install-manifest.json"
     manifest.save(manifest_path)
@@ -52,3 +52,13 @@ def _safe_destination(staging_dir: Path, destination_path: str) -> Path:
     except ValueError as exc:
         raise ValueError(f"Refusing to write outside staging directory: {destination_path}") from exc
     return destination
+
+
+def _write_operation_source(package: ModPackage, relative_path: str, destination: Path) -> None:
+    if package.detected_type == "loose_folder":
+        shutil.copy2(package.path / relative_path, destination)
+        return
+    if package.detected_type == "zip":
+        destination.write_bytes(zip_adapter.read_file(package.path, relative_path))
+        return
+    raise ValueError(f"Package type cannot be staged yet: {package.detected_type}")

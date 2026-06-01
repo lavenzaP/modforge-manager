@@ -15,3 +15,10 @@
 - Added JSON/CSV/TXT translation extraction to CSV.
 - Replaced the GUI placeholder with a lightweight tkinter project viewer.
 - Expanded tests from 8 to 11 stdlib `unittest` cases.
+
+## ZIP Package Support
+
+- ZIP mod packages now produce file lists for scanning and dry-run plans.
+- Staging apply can extract winning ZIP entries.
+- Unsafe ZIP member paths are ignored with warnings.
+- Expanded tests from 11 to 14 stdlib `unittest` cases.

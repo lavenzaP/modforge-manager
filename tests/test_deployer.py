@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from zipfile import ZipFile
 
 from bootstrap import ensure_src_path
 
@@ -36,6 +37,25 @@ class DeployerTests(unittest.TestCase):
             self.assertEqual(manifest.skipped_files, ["config/settings.json"])
             self.assertTrue((staging / ".modforge-install-manifest.json").exists())
             self.assertFalse((game / "config" / "settings.json").exists())
+
+    def test_apply_to_staging_extracts_zip_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / "staging"
+            mods.mkdir()
+            game.mkdir()
+            with ZipFile(mods / "ZipMod.zip", "w") as zip_file:
+                zip_file.writestr("textures/icon.txt", "icon")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_staging(project, plan, packages)
+
+            self.assertEqual((staging / "textures" / "icon.txt").read_text(encoding="utf-8"), "icon")
+            self.assertEqual(manifest.copied_files, ["textures/icon.txt"])
 
 
 if __name__ == "__main__":
