@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.game_profile import builtin_profiles
+from modforge.core.manifest import InstallManifest
 from modforge.core.mod_package import ModPackage, scan_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
@@ -241,15 +242,23 @@ class ModForgeApp:
         self.status.set(f"Applied game manifest {manifest.manifest_id}")
 
     def restore(self) -> None:
-        selected = filedialog.askopenfilename(
-            title="Select ModForge manifest",
-            filetypes=[("Manifest JSON", "*.json"), ("All files", "*.*")],
-        )
-        if not selected:
+        project = self._require_project()
+        if project is None:
             return
-        if not messagebox.askyesno("Restore manifest", "Restore files using this manifest?"):
+        manifest_dir = project.staging_dir.parent / "manifests"
+        manifest_paths = sorted(manifest_dir.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        if not manifest_paths:
+            messagebox.showinfo("ModForge Manager", f"No manifests found in {manifest_dir}.")
             return
-        manifest = restore_manifest(Path(selected))
+        dialog = ManifestRestoreDialog(self.root, manifest_paths)
+        selection = dialog.show()
+        if selection is None:
+            return
+        manifest_path, selected_paths = selection
+        target = "selected files" if selected_paths else "all restorable files"
+        if not messagebox.askyesno("Restore manifest", f"Restore {target} from {manifest_path.name}?"):
+            return
+        manifest = restore_manifest(manifest_path, selected_paths)
         self._write(self.manifest_summary(manifest.to_dict()))
         self.status.set(f"Restored manifest {manifest.manifest_id}")
 
@@ -387,6 +396,16 @@ class ModForgeApp:
             lines.append(f"        {detail}")
         return "\n".join(lines)
 
+    @staticmethod
+    def manifest_record_rows(manifest: InstallManifest) -> list[tuple[str, str, str, str]]:
+        rows = []
+        for record in manifest.records:
+            if record.status == "skipped":
+                continue
+            backup = "yes" if record.backup_path else "no"
+            rows.append((record.destination_path, record.status, record.source_mod, backup))
+        return rows
+
     def _require_project(self) -> ModProject | None:
         if self.project is None:
             messagebox.showinfo("ModForge Manager", "Open a project file first.")
@@ -470,6 +489,119 @@ class ToolSettingsDialog:
 
     def current_paths(self) -> dict[str, str]:
         return {tool_id: variable.get().strip() for tool_id, variable in self.variables.items()}
+
+
+class ManifestRestoreDialog:
+    def __init__(self, parent: tk.Tk, manifest_paths: list[Path]) -> None:
+        self.manifest_paths = manifest_paths
+        self.current_manifest: InstallManifest | None = None
+        self.row_paths: dict[str, str] = {}
+        self.result: tuple[Path, list[str] | None] | None = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("Restore Manifest")
+        self.window.geometry("820x480")
+        self.window.transient(parent)
+
+        frame = ttk.Frame(self.window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.window.columnconfigure(0, weight=1)
+        self.window.rowconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        self.manifest_list = tk.Listbox(frame, height=12, exportselection=False)
+        self.manifest_list.grid(row=0, column=0, sticky="ns", padx=(0, 8))
+        self.manifest_list.bind("<<ListboxSelect>>", lambda _event: self.load_selected_manifest())
+
+        right = ttk.Frame(frame)
+        right.grid(row=0, column=1, sticky="nsew")
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(1, weight=1)
+
+        self.summary = tk.StringVar(value="")
+        ttk.Label(right, textvariable=self.summary).grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        self.record_table = ttk.Treeview(
+            right,
+            columns=("status", "source", "backup"),
+            show="tree headings",
+            selectmode="extended",
+        )
+        self.record_table.heading("#0", text="Destination")
+        self.record_table.heading("status", text="Status")
+        self.record_table.heading("source", text="Source Mod")
+        self.record_table.heading("backup", text="Backup")
+        self.record_table.column("#0", width=380, anchor="w")
+        self.record_table.column("status", width=100, anchor="center")
+        self.record_table.column("source", width=160, anchor="w")
+        self.record_table.column("backup", width=80, anchor="center")
+        self.record_table.grid(row=1, column=0, sticky="nsew")
+
+        controls = ttk.Frame(right)
+        controls.grid(row=2, column=0, sticky="e", pady=(10, 0))
+        ttk.Button(controls, text="Restore Selected", command=self.restore_selected).pack(side="left")
+        ttk.Button(controls, text="Restore All", command=self.restore_all).pack(side="left", padx=(8, 0))
+        ttk.Button(controls, text="Cancel", command=self.cancel).pack(side="left", padx=(8, 0))
+
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+        for path in self.manifest_paths:
+            self.manifest_list.insert(tk.END, path.name)
+        self.manifest_list.selection_set(0)
+        self.load_selected_manifest()
+
+    def show(self) -> tuple[Path, list[str] | None] | None:
+        self.window.grab_set()
+        self.window.wait_window()
+        return self.result
+
+    def selected_manifest_path(self) -> Path | None:
+        selection = self.manifest_list.curselection()
+        if not selection:
+            return None
+        return self.manifest_paths[selection[0]]
+
+    def load_selected_manifest(self) -> None:
+        path = self.selected_manifest_path()
+        if path is None:
+            return
+        try:
+            manifest = InstallManifest.load(path)
+        except (OSError, ValueError) as error:
+            messagebox.showerror("ModForge Manager", f"Could not load manifest: {error}")
+            return
+        self.current_manifest = manifest
+        self.summary.set(
+            f"{manifest.manifest_id} | target: {manifest.target} | "
+            f"copied: {len(manifest.copied_files)} | overwritten: {len(manifest.overwritten_files)}"
+        )
+        self.record_table.delete(*self.record_table.get_children())
+        self.row_paths = {}
+        for index, (destination, status, source, backup) in enumerate(ModForgeApp.manifest_record_rows(manifest)):
+            item_id = str(index)
+            self.row_paths[item_id] = destination
+            self.record_table.insert("", "end", iid=item_id, text=destination, values=(status, source, backup))
+
+    def restore_selected(self) -> None:
+        path = self.selected_manifest_path()
+        if path is None:
+            return
+        selected_paths = [self.row_paths[item_id] for item_id in self.record_table.selection()]
+        if not selected_paths:
+            messagebox.showinfo("ModForge Manager", "Select one or more files to restore.")
+            return
+        self.result = (path, selected_paths)
+        self.window.destroy()
+
+    def restore_all(self) -> None:
+        path = self.selected_manifest_path()
+        if path is None:
+            return
+        self.result = (path, None)
+        self.window.destroy()
+
+    def cancel(self) -> None:
+        self.result = None
+        self.window.destroy()
 
 
 class UserProfileDialog:

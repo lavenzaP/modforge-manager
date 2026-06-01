@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 from uuid import uuid4
 from datetime import UTC, datetime
@@ -132,7 +133,7 @@ def apply_to_game(project: ModProject, plan: DeploymentPlan, packages: list[ModP
     return manifest
 
 
-def restore_manifest(manifest_path: Path) -> InstallManifest:
+def restore_manifest(manifest_path: Path, selected_paths: Iterable[str] | None = None) -> InstallManifest:
     """Restore a previously applied game manifest."""
 
     manifest = InstallManifest.load(manifest_path)
@@ -142,7 +143,16 @@ def restore_manifest(manifest_path: Path) -> InstallManifest:
     if not target_root.exists() or not target_root.is_dir():
         raise FileNotFoundError(f"Manifest target root is unavailable: {target_root}")
 
-    for record in reversed(manifest.records):
+    selected = {_normalize_manifest_path(path) for path in selected_paths} if selected_paths is not None else None
+    restorable_records = [
+        record
+        for record in manifest.records
+        if record.status != "skipped" and (selected is None or _normalize_manifest_path(record.destination_path) in selected)
+    ]
+    if selected is not None and not restorable_records:
+        raise ValueError("No restorable records matched the selected paths.")
+
+    for record in reversed(restorable_records):
         if record.status == "skipped":
             continue
         destination = _safe_destination(target_root, record.destination_path)
@@ -177,3 +187,10 @@ def _write_operation_source(package: ModPackage, relative_path: str, destination
         destination.write_bytes(zip_adapter.read_file(package.path, relative_path))
         return
     raise ValueError(f"Package type cannot be staged yet: {package.detected_type}")
+
+
+def _normalize_manifest_path(path: str) -> str:
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.lstrip("/")

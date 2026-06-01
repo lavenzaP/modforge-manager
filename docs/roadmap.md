@@ -17,11 +17,11 @@
 - Built-in game profile templates. Done.
 - Profile-aware deployment rules and ignored patterns. Done.
 - User profiles and enabled mod sets. Done.
+- Richer backup browser and selective restore UI. Done.
 - Synthetic fixture tests. Done.
 
 ## Phase 2
 
-- Richer backup browser and selective restore UI.
 - More game-specific profile templates.
 - Real GUI tables, tool validation details, and progress surfaces.
 - Optional PySide6 UI.

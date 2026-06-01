@@ -80,7 +80,7 @@ class CliTests(unittest.TestCase):
                 )
                 manifests = sorted((root / ".modforge" / "manifests").glob("*.json"))
                 self.assertEqual(
-                    main(["restore", "--manifest", str(manifests[0]), "--yes", "--json"]),
+                    main(["restore", "--manifest", str(manifests[0]), "--path", "strings.json", "--yes", "--json"]),
                     0,
                 )
 

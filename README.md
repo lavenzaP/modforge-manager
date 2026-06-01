@@ -21,6 +21,8 @@ tool checks, and fake-fixture-tested core behavior.
 - Create multiple user mod sets, switch between them, enable/disable mods, and
   set priority order per set.
 - Copy winning files into a staging directory with an install manifest.
+- Apply to the game root with backups, then restore all files or selected
+  manifest paths.
 - Extract basic JSON/CSV/TXT strings into a translation CSV.
 - Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
   toggling enabled state, changing priority, planning, reporting, applying, and
@@ -61,6 +63,7 @@ python -m modforge.cli tools check
 python -m modforge.cli apply-staging --yes
 python -m modforge.cli apply-game --yes
 python -m modforge.cli restore --manifest .modforge\manifests\<manifest-id>.json --yes
+python -m modforge.cli restore --manifest .modforge\manifests\<manifest-id>.json --path config\settings.json --yes
 python -m modforge.cli translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
 ```
 
@@ -104,7 +107,8 @@ ruff format .
 - Staging apply writes only to the configured staging directory.
 - Game apply requires `--yes`, backs up overwritten files, and writes a manifest
   under `.modforge\manifests`.
-- Restore requires `--yes` and a manifest path.
+- Restore requires `--yes` and a manifest path. Add one or more `--path`
+  options to restore selected destination paths only.
 - ZIP entries with unsafe paths are ignored and reported as warnings.
 - Do not commit real game files, mod archives, crash dumps, DLLs, or executables.
 - Use synthetic fixtures only.

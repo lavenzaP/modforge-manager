@@ -88,6 +88,34 @@ class DeployerTests(unittest.TestCase):
             self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "original")
             self.assertFalse((game / "textures" / "new.txt").exists())
 
+    def test_restore_manifest_can_restore_selected_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            (mods / "Patch" / "config").mkdir(parents=True)
+            (mods / "Patch" / "textures").mkdir(parents=True)
+            (game / "config").mkdir(parents=True)
+            (mods / "Patch" / "config" / "settings.json").write_text("patched", encoding="utf-8")
+            (mods / "Patch" / "textures" / "new.txt").write_text("new", encoding="utf-8")
+            (game / "config" / "settings.json").write_text("original", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_game(project, plan, packages)
+            manifest_path = staging.parent / "manifests" / f"{manifest.manifest_id}.json"
+
+            restore_manifest(manifest_path, [r"config\settings.json"])
+
+            self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "original")
+            self.assertEqual((game / "textures" / "new.txt").read_text(encoding="utf-8"), "new")
+
+            restore_manifest(manifest_path, ["textures/new.txt"])
+
+            self.assertFalse((game / "textures" / "new.txt").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

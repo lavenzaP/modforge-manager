@@ -66,3 +66,11 @@
   dialog.
 - Active user profiles keep their own disabled mods and priority order.
 - Expanded tests from 21 to 22 stdlib `unittest` cases.
+
+## Selective Restore
+
+- `restore_manifest` can now restore only selected destination paths.
+- CLI `restore` accepts repeated `--path` options for partial rollback.
+- GUI Restore now opens a manifest browser, shows restorable files, and supports
+  restore-all or restore-selected flows.
+- Expanded tests from 22 to 24 stdlib `unittest` cases.

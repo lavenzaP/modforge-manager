@@ -134,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     restore = subcommands.add_parser("restore", help="Restore a game apply manifest")
     restore.add_argument("--manifest", required=True, type=Path)
+    restore.add_argument("--path", action="append", dest="paths", help="Restore only this destination path")
     restore.add_argument("--yes", action="store_true", help="Confirm restore write")
     restore.add_argument("--json", action="store_true")
     restore.set_defaults(handler=handle_restore)
@@ -349,12 +350,14 @@ def handle_restore(args: argparse.Namespace) -> int:
         print("Refusing to restore without --yes.")
         return 2
 
-    manifest = restore_manifest(args.manifest)
+    manifest = restore_manifest(args.manifest, args.paths)
     if args.json:
         print(json.dumps(manifest.to_dict(), indent=2))
     else:
         print(f"Restored manifest: {manifest.manifest_id}")
         print(f"Target root: {manifest.target_root}")
+        if args.paths:
+            print(f"Selected paths: {len(args.paths)}")
     return 0
 
 

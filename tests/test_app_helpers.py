@@ -7,6 +7,7 @@ from bootstrap import ensure_src_path
 ensure_src_path()
 
 from modforge.app import ModForgeApp
+from modforge.core.manifest import InstallManifest, InstallRecord
 from modforge.tools.checker import ToolCheck
 
 
@@ -40,6 +41,26 @@ class AppHelperTests(unittest.TestCase):
         self.assertIn("OK      seven_zip (7-Zip)", summary)
         self.assertIn("MISSING unreal_pak (UnrealPak)", summary)
         self.assertIn("UnrealPak is missing.", summary)
+
+    def test_manifest_record_rows_excludes_skipped_records(self) -> None:
+        manifest = InstallManifest(
+            manifest_id="demo",
+            records=[
+                InstallRecord("config/settings.json", "Patch", "config/settings.json", "overwritten", "backup"),
+                InstallRecord("textures/new.txt", "Patch", "textures/new.txt", "copied", ""),
+                InstallRecord("config/settings.json", "Old", "config/settings.json", "skipped", ""),
+            ],
+        )
+
+        rows = ModForgeApp.manifest_record_rows(manifest)
+
+        self.assertEqual(
+            rows,
+            [
+                ("config/settings.json", "overwritten", "Patch", "yes"),
+                ("textures/new.txt", "copied", "Patch", "no"),
+            ],
+        )
 
 
 if __name__ == "__main__":
