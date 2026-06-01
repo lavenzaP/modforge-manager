@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+.idea/
+.vscode/
+
+# Local app state
+modforge.project.json
+.modforge/
+*.log
+
+# Avoid accidentally committing real game/mod payloads.
+*.7z
+*.rar
+*.zip
+*.pak
+*.pck
+*.ba2
+*.bsa
+*.dll
+*.exe
+*.mdmp
+*.dmp

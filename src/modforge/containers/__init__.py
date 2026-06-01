@@ -1,0 +1,1 @@
+"""Container adapter package."""
