@@ -22,3 +22,11 @@
 - Staging apply can extract winning ZIP entries.
 - Unsafe ZIP member paths are ignored with warnings.
 - Expanded tests from 11 to 14 stdlib `unittest` cases.
+
+## Game Apply And Restore
+
+- Added `apply-game --yes` with backup and manifest creation.
+- Added `restore --manifest <path> --yes` for manifest-based rollback.
+- Project init now resolves the default `.modforge/staging` directory beside the
+  project file.
+- Expanded tests from 14 to 15 stdlib `unittest` cases.

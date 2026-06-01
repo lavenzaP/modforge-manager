@@ -51,6 +51,15 @@ class CliTests(unittest.TestCase):
                     main(["translation", "extract", "--source", str(mods), "--output", str(output_csv)]),
                     0,
                 )
+                self.assertEqual(
+                    main(["apply-game", "--project-file", str(project_file), "--yes", "--json"]),
+                    0,
+                )
+                manifests = sorted((root / ".modforge" / "manifests").glob("*.json"))
+                self.assertEqual(
+                    main(["restore", "--manifest", str(manifests[0]), "--yes", "--json"]),
+                    0,
+                )
 
             self.assertTrue(output_csv.exists())
             self.assertEqual(json.loads(project_file.read_text(encoding="utf-8"))["name"], "Demo")

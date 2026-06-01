@@ -10,13 +10,14 @@
 - Conflict reports. Done.
 - External tool checks. Done.
 - Staging-only apply with install manifest. Done.
+- Game-root apply with backup manifest and restore. Done.
 - Basic translation extraction. Done.
 - Basic GUI shell. Done.
 - Synthetic fixture tests. Done.
 
 ## Phase 2
 
-- Backup and restore for real game-folder writes.
+- Richer backup browser and selective restore UI.
 - User profiles and enabled mod sets.
 - More game profile templates.
 - Real GUI tables and progress surfaces.

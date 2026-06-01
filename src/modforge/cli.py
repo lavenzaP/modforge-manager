@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from modforge import __version__
-from modforge.core.deployer import apply_to_staging
+from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
@@ -98,6 +98,18 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--json", action="store_true")
     apply.set_defaults(handler=handle_apply_staging)
 
+    apply_game = subcommands.add_parser("apply-game", help="Copy winning files into game root")
+    apply_game.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    apply_game.add_argument("--yes", action="store_true", help="Confirm game-root write")
+    apply_game.add_argument("--json", action="store_true")
+    apply_game.set_defaults(handler=handle_apply_game)
+
+    restore = subcommands.add_parser("restore", help="Restore a game apply manifest")
+    restore.add_argument("--manifest", required=True, type=Path)
+    restore.add_argument("--yes", action="store_true", help="Confirm restore write")
+    restore.add_argument("--json", action="store_true")
+    restore.set_defaults(handler=handle_restore)
+
     translation = subcommands.add_parser("translation", help="Translation workspace helpers")
     translation_subcommands = translation.add_subparsers(required=True)
     translation_extract = translation_subcommands.add_parser(
@@ -113,11 +125,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def handle_project_init(args: argparse.Namespace) -> int:
+    project_dir = args.project_file.resolve(strict=False).parent
+    staging_dir = args.staging_dir if args.staging_dir.is_absolute() else project_dir / args.staging_dir
     project = ModProject.create(
         name=args.name,
         game_root=args.game_root,
         mods_dir=args.mods_dir,
-        staging_dir=args.staging_dir,
+        staging_dir=staging_dir,
     )
     project.save(args.project_file)
     print(f"Created {args.project_file}")
@@ -230,6 +244,41 @@ def handle_apply_staging(args: argparse.Namespace) -> int:
         print(f"Copied: {len(manifest.copied_files)}")
         print(f"Overwritten: {len(manifest.overwritten_files)}")
         print(f"Skipped: {len(manifest.skipped_files)}")
+    return 0
+
+
+def handle_apply_game(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print("Refusing to write the game root without --yes. Run `modforge plan` first.")
+        return 2
+
+    project = ModProject.load(args.project_file)
+    packages = scan_mods(project.mods_dir, project.active_profile())
+    plan = build_deployment_plan(project, packages)
+    manifest = apply_to_game(project, plan, packages)
+    if args.json:
+        print(json.dumps(manifest.to_dict(), indent=2))
+    else:
+        print(f"Applied to game root: {project.game_root}")
+        print(f"Manifest id: {manifest.manifest_id}")
+        print(f"Copied: {len(manifest.copied_files)}")
+        print(f"Overwritten: {len(manifest.overwritten_files)}")
+        print(f"Skipped: {len(manifest.skipped_files)}")
+        print(f"Backups: {len(manifest.backups)}")
+    return 0
+
+
+def handle_restore(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print("Refusing to restore without --yes.")
+        return 2
+
+    manifest = restore_manifest(args.manifest)
+    if args.json:
+        print(json.dumps(manifest.to_dict(), indent=2))
+    else:
+        print(f"Restored manifest: {manifest.manifest_id}")
+        print(f"Target root: {manifest.target_root}")
     return 0
 
 

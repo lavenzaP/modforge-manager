@@ -9,7 +9,7 @@ from bootstrap import ensure_src_path
 
 ensure_src_path()
 
-from modforge.core.deployer import apply_to_staging
+from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
@@ -56,6 +56,37 @@ class DeployerTests(unittest.TestCase):
 
             self.assertEqual((staging / "textures" / "icon.txt").read_text(encoding="utf-8"), "icon")
             self.assertEqual(manifest.copied_files, ["textures/icon.txt"])
+
+    def test_apply_to_game_backs_up_and_restores(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            (mods / "Patch" / "config").mkdir(parents=True)
+            (mods / "Patch" / "textures").mkdir(parents=True)
+            (game / "config").mkdir(parents=True)
+            (mods / "Patch" / "config" / "settings.json").write_text("patched", encoding="utf-8")
+            (mods / "Patch" / "textures" / "new.txt").write_text("new", encoding="utf-8")
+            (game / "config" / "settings.json").write_text("original", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_game(project, plan, packages)
+            manifest_path = staging.parent / "manifests" / f"{manifest.manifest_id}.json"
+
+            self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "patched")
+            self.assertEqual((game / "textures" / "new.txt").read_text(encoding="utf-8"), "new")
+            self.assertEqual(manifest.overwritten_files, ["config/settings.json"])
+            self.assertEqual(manifest.copied_files, ["textures/new.txt"])
+            self.assertTrue(manifest_path.exists())
+
+            restored = restore_manifest(manifest_path)
+
+            self.assertTrue(restored.restored_at)
+            self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "original")
+            self.assertFalse((game / "textures" / "new.txt").exists())
 
 
 if __name__ == "__main__":
