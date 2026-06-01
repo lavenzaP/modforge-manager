@@ -7,8 +7,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
-from modforge.core.deployment_plan import build_deployment_plan
-from modforge.core.game_profile import builtin_profiles
+from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
+from modforge.core.game_profile import builtin_profile, builtin_profiles
 from modforge.core.manifest import InstallManifest
 from modforge.core.manifest_browser import list_manifest_summaries
 from modforge.core.mod_package import ModPackage, scan_project_mods
@@ -42,91 +42,396 @@ class ModForgeApp:
         self._build()
 
     def _build(self) -> None:
-        self.root.minsize(980, 620)
-        frame = ttk.Frame(self.root, padding=12)
-        frame.grid(row=0, column=0, sticky="nsew")
+        self.root.geometry("1440x860")
+        self.root.minsize(1180, 720)
+        self.root.configure(bg="#0f151d")
+        self._configure_style()
+
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(2, weight=1)
-
-        toolbar = ttk.Frame(frame)
-        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        ttk.Button(toolbar, text="New Project", command=self.new_project).pack(side="left")
-        ttk.Button(toolbar, text="Open Project", command=self.open_project).pack(side="left")
-        ttk.Button(toolbar, text="Profiles", command=self.manage_profiles).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Scan", command=self.scan).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Plan", command=self.plan).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Save Report", command=self.save_report).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Apply Staging", command=self.apply_staging).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Apply Game", command=self.apply_game).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Restore", command=self.restore).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Health", command=self.health).pack(side="left", padx=(8, 0))
-        ttk.Button(toolbar, text="Tools", command=self.configure_tools).pack(side="left", padx=(8, 0))
 
         self.project_info = tk.StringVar(value="No project loaded.")
-        ttk.Label(frame, textvariable=self.project_info).grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self.project_name_var = tk.StringVar(value="Project:  -")
+        self.project_path_var = tk.StringVar(value="Open a project to begin.")
+        self.profile_var = tk.StringVar(value="generic-folder")
+        self.mod_set_var = tk.StringVar(value="Default")
+        self.search_var = tk.StringVar(value="")
+        self.search_var.trace_add("write", lambda *_args: self.refresh_mod_table())
+        self.kpi_vars = {
+            "total": (tk.StringVar(value="0"), tk.StringVar(value="Scanned: 0")),
+            "enabled": (tk.StringVar(value="0"), tk.StringVar(value="0.0%")),
+            "conflicts": (tk.StringVar(value="0"), tk.StringVar(value="No plan yet")),
+            "warnings": (tk.StringVar(value="0"), tk.StringVar(value="All clear")),
+            "plan": (tk.StringVar(value="Ready"), tk.StringVar(value="No plan yet")),
+            "set": (tk.StringVar(value="Default"), tk.StringVar(value="0 enabled")),
+        }
+        self.table_rows: dict[str, str] = {}
 
-        content = ttk.PanedWindow(frame, orient="vertical")
-        content.grid(row=2, column=0, sticky="nsew")
+        shell = ttk.Frame(self.root, style="App.TFrame")
+        shell.grid(row=0, column=0, sticky="nsew")
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(1, weight=1)
 
-        mod_frame = ttk.Frame(content)
-        mod_frame.columnconfigure(0, weight=1)
-        mod_frame.rowconfigure(0, weight=1)
-        self.mod_table = ttk.Treeview(
-            mod_frame,
-            columns=("enabled", "priority", "type", "files", "warnings"),
-            show="tree headings",
-            selectmode="browse",
+        header = ttk.Frame(shell, style="Header.TFrame", padding=(14, 10))
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(2, weight=1)
+
+        logo = tk.Canvas(header, width=40, height=40, bg="#0c1118", bd=0, highlightthickness=0)
+        logo.create_rectangle(6, 6, 34, 34, outline="#3f8cff", width=2)
+        logo.create_line(10, 26, 10, 12, 20, 22, 30, 12, 30, 26, fill="#61a6ff", width=2)
+        logo.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
+        ttk.Label(header, text="ModForge Manager", style="Title.TLabel").grid(row=0, column=1, sticky="w")
+        ttk.Label(header, text="v0.1.0 MVP RC", style="Muted.TLabel").grid(row=1, column=1, sticky="w")
+
+        project_block = ttk.Frame(header, style="Header.TFrame")
+        project_block.grid(row=0, column=2, rowspan=2, sticky="w", padx=(26, 0))
+        ttk.Label(project_block, textvariable=self.project_name_var, style="HeaderText.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
         )
-        self.mod_table.heading("#0", text="Mod", command=lambda: self.set_mod_sort("name"))
+        ttk.Label(project_block, textvariable=self.project_path_var, style="Muted.TLabel").grid(
+            row=1,
+            column=0,
+            sticky="w",
+        )
+
+        profile_block = ttk.Frame(header, style="Header.TFrame")
+        profile_block.grid(row=0, column=3, rowspan=2, sticky="e", padx=(20, 20))
+        ttk.Label(profile_block, text="Game Profile:", style="HeaderText.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="e",
+            padx=(0, 8),
+        )
+        self.profile_box = ttk.Combobox(
+            profile_block,
+            textvariable=self.profile_var,
+            values=[profile.id for profile in builtin_profiles()],
+            width=22,
+            state="readonly",
+            style="Dark.TCombobox",
+        )
+        self.profile_box.grid(row=0, column=1, sticky="e")
+        self.profile_box.bind("<<ComboboxSelected>>", lambda _event: self.change_game_profile())
+
+        ttk.Label(header, text="Dry-run by default", style="SafeBadge.TLabel", padding=(12, 8)).grid(
+            row=0,
+            column=4,
+            rowspan=2,
+            sticky="e",
+        )
+
+        body = ttk.Frame(shell, style="App.TFrame")
+        body.grid(row=1, column=0, sticky="nsew")
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+
+        sidebar = ttk.Frame(body, style="Sidebar.TFrame", padding=(8, 14))
+        sidebar.grid(row=0, column=0, sticky="ns")
+        sidebar.grid_propagate(False)
+        sidebar.configure(width=196)
+        for index, label in enumerate(
+            [
+                "Dashboard",
+                "Project",
+                "Mods",
+                "Mod Sets",
+                "Conflicts",
+                "Plan",
+                "Reports",
+                "Apply & Restore",
+                "Manifests",
+                "Translation Extract",
+                "Tools",
+                "Audit / Doctor",
+            ]
+        ):
+            style = "SidebarSelected.TButton" if label == "Mods" else "Sidebar.TButton"
+            ttk.Button(sidebar, text=label, style=style).grid(row=index, column=0, sticky="ew", pady=2)
+
+        sidebar.rowconfigure(12, weight=1)
+        modset_card = ttk.Frame(sidebar, style="Panel.TFrame", padding=10)
+        modset_card.grid(row=13, column=0, sticky="sew", pady=(12, 0))
+        ttk.Label(modset_card, text="Active Mod Set", style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(modset_card, textvariable=self.mod_set_var, style="CardValue.TLabel").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            pady=(4, 8),
+        )
+        ttk.Button(modset_card, text="Manage Mod Sets", command=self.manage_profiles, style="Dark.TButton").grid(
+            row=2,
+            column=0,
+            sticky="ew",
+        )
+
+        main = ttk.Frame(body, style="App.TFrame", padding=(12, 10))
+        main.grid(row=0, column=1, sticky="nsew")
+        main.columnconfigure(0, weight=1)
+        main.rowconfigure(2, weight=1)
+
+        actions = ttk.Frame(main, style="App.TFrame")
+        actions.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        for label, command, style in [
+            ("Open Project", self.open_project, "Dark.TButton"),
+            ("Scan Mods", self.scan, "Dark.TButton"),
+            ("Plan", self.plan, "Dark.TButton"),
+            ("Save Report", self.save_report, "Dark.TButton"),
+            ("Apply Staging", self.apply_staging, "Blue.TButton"),
+            ("Apply Game", self.apply_game, "Red.TButton"),
+            ("Restore", self.restore, "Purple.TButton"),
+            ("Tools Check", self.configure_tools, "Dark.TButton"),
+            ("Health", self.health, "Dark.TButton"),
+        ]:
+            ttk.Button(actions, text=label, command=command, style=style).pack(side="left", padx=(0, 8))
+
+        stats = ttk.Frame(main, style="App.TFrame")
+        stats.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        for index, (title, key, accent) in enumerate(
+            [
+                ("Total Mods", "total", "#6b7280"),
+                ("Enabled", "enabled", "#22c55e"),
+                ("Conflicts", "conflicts", "#ef4444"),
+                ("Scan Warnings", "warnings", "#f59e0b"),
+                ("Last Plan", "plan", "#22c55e"),
+                ("Active Mod Set", "set", "#3b82f6"),
+            ]
+        ):
+            card = self._metric_card(stats, title, key, accent)
+            card.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 4, 4))
+            stats.columnconfigure(index, weight=1)
+
+        work = ttk.Frame(main, style="App.TFrame")
+        work.grid(row=2, column=0, sticky="nsew")
+        work.columnconfigure(0, weight=1)
+        work.rowconfigure(0, weight=1)
+        work.rowconfigure(1, weight=0)
+
+        center = ttk.Frame(work, style="App.TFrame")
+        center.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        center.columnconfigure(0, weight=1)
+        center.rowconfigure(0, weight=1)
+
+        self.tabs = ttk.Notebook(center, style="Dark.TNotebook")
+        self.tabs.grid(row=0, column=0, sticky="nsew")
+
+        mods_tab = ttk.Frame(self.tabs, style="Panel.TFrame", padding=8)
+        mods_tab.columnconfigure(0, weight=1)
+        mods_tab.rowconfigure(1, weight=1)
+        self.tabs.add(mods_tab, text="Mods")
+
+        table_toolbar = ttk.Frame(mods_tab, style="Panel.TFrame")
+        table_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        search = ttk.Entry(table_toolbar, textvariable=self.search_var, width=28, style="Dark.TEntry")
+        search.pack(side="left", padx=(0, 8))
+        search.insert(0, "")
+        for label, command in [
+            ("Enable", lambda: self.set_selected_enabled(True)),
+            ("Disable", lambda: self.set_selected_enabled(False)),
+            ("Move Up", lambda: self.move_selected_priority(-1)),
+            ("Move Down", lambda: self.move_selected_priority(1)),
+            ("Rescan", self.scan),
+        ]:
+            ttk.Button(table_toolbar, text=label, command=command, style="Dark.TButton").pack(side="left", padx=(0, 6))
+
+        table_frame = ttk.Frame(mods_tab, style="Panel.TFrame")
+        table_frame.grid(row=1, column=0, sticky="nsew")
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+        self.mod_table = ttk.Treeview(
+            table_frame,
+            columns=("enabled", "priority", "name", "type", "source", "status", "warnings", "conflicts"),
+            show="headings",
+            selectmode="browse",
+            style="Mod.Treeview",
+        )
         self.mod_table.heading("enabled", text="Enabled", command=lambda: self.set_mod_sort("enabled"))
         self.mod_table.heading("priority", text="Priority", command=lambda: self.set_mod_sort("priority"))
+        self.mod_table.heading("name", text="Mod Name", command=lambda: self.set_mod_sort("name"))
         self.mod_table.heading("type", text="Type", command=lambda: self.set_mod_sort("type"))
-        self.mod_table.heading("files", text="Files", command=lambda: self.set_mod_sort("files"))
+        self.mod_table.heading("source", text="Source")
+        self.mod_table.heading("status", text="Status")
         self.mod_table.heading("warnings", text="Warnings", command=lambda: self.set_mod_sort("warnings"))
-        self.mod_table.column("#0", width=280, anchor="w")
-        self.mod_table.column("enabled", width=80, anchor="center")
-        self.mod_table.column("priority", width=80, anchor="center")
-        self.mod_table.column("type", width=110, anchor="center")
-        self.mod_table.column("files", width=80, anchor="center")
-        self.mod_table.column("warnings", width=90, anchor="center")
+        self.mod_table.heading("conflicts", text="Destination Conflicts")
+        self.mod_table.column("enabled", width=74, anchor="center", stretch=False)
+        self.mod_table.column("priority", width=78, anchor="center", stretch=False)
+        self.mod_table.column("name", width=210, anchor="w")
+        self.mod_table.column("type", width=120, anchor="center")
+        self.mod_table.column("source", width=170, anchor="w")
+        self.mod_table.column("status", width=84, anchor="center", stretch=False)
+        self.mod_table.column("warnings", width=90, anchor="center", stretch=False)
+        self.mod_table.column("conflicts", width=130, anchor="center", stretch=False)
         self.mod_table.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(mod_frame, command=self.mod_table.yview)
+        self.mod_table.bind("<<TreeviewSelect>>", lambda _event: self.refresh_selected_detail())
+        scrollbar = ttk.Scrollbar(table_frame, command=self.mod_table.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.mod_table.configure(yscrollcommand=scrollbar.set)
+        self.mod_table.tag_configure("disabled", foreground="#7b8492")
+        self.mod_table.tag_configure("warning", foreground="#fbbf24")
+        self.mod_table.tag_configure("conflict", foreground="#fca5a5")
 
-        mod_controls = ttk.Frame(mod_frame)
-        mod_controls.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        ttk.Button(mod_controls, text="Enable", command=lambda: self.set_selected_enabled(True)).pack(side="left")
-        ttk.Button(mod_controls, text="Disable", command=lambda: self.set_selected_enabled(False)).pack(
-            side="left",
-            padx=(8, 0),
+        self.mod_count_label = ttk.Label(mods_tab, text="0 mods", style="Muted.TLabel")
+        self.mod_count_label.grid(row=2, column=0, sticky="w", pady=(8, 0))
+
+        conflicts_tab = ttk.Frame(self.tabs, style="Panel.TFrame", padding=8)
+        conflicts_tab.columnconfigure(0, weight=1)
+        conflicts_tab.rowconfigure(0, weight=1)
+        self.conflict_output = self._text_widget(conflicts_tab, height=12)
+        self.conflict_output.grid(row=0, column=0, sticky="nsew")
+        self.tabs.add(conflicts_tab, text="Conflicts")
+
+        plan_tab = ttk.Frame(self.tabs, style="Panel.TFrame", padding=8)
+        plan_tab.columnconfigure(0, weight=1)
+        plan_tab.rowconfigure(0, weight=1)
+        self.plan_output = self._text_widget(plan_tab, height=12)
+        self.plan_output.grid(row=0, column=0, sticky="nsew")
+        self.tabs.add(plan_tab, text="Plan Preview")
+
+        restore_tab = ttk.Frame(self.tabs, style="Panel.TFrame", padding=8)
+        restore_tab.columnconfigure(0, weight=1)
+        restore_tab.rowconfigure(0, weight=1)
+        self.restore_output = self._text_widget(restore_tab, height=12)
+        self.restore_output.grid(row=0, column=0, sticky="nsew")
+        self.tabs.add(restore_tab, text="Restore Preview")
+
+        log_panel = ttk.Frame(work, style="Panel.TFrame", padding=(8, 6))
+        log_panel.grid(row=1, column=0, sticky="ew", padx=(0, 10), pady=(10, 0))
+        log_panel.columnconfigure(0, weight=1)
+        ttk.Label(log_panel, text="Live Log", style="TabTitle.TLabel").grid(row=0, column=0, sticky="w")
+        self.output = self._text_widget(log_panel, height=7)
+        self.output.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        details = ttk.Frame(work, style="App.TFrame")
+        details.grid(row=0, column=1, rowspan=2, sticky="nsew")
+        details.configure(width=330)
+        details.grid_propagate(False)
+        details.columnconfigure(0, weight=1)
+
+        self.detail_title = tk.StringVar(value="No mod selected")
+        detail_card = ttk.Frame(details, style="Panel.TFrame", padding=12)
+        detail_card.grid(row=0, column=0, sticky="ew")
+        ttk.Label(detail_card, textvariable=self.detail_title, style="PanelTitle.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
         )
-        ttk.Button(mod_controls, text="Priority Up", command=lambda: self.move_selected_priority(-1)).pack(
-            side="left",
-            padx=(8, 0),
+        self.detail_text = self._text_widget(detail_card, height=12)
+        self.detail_text.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+
+        conflict_card = ttk.Frame(details, style="Panel.TFrame", padding=12)
+        conflict_card.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        ttk.Label(conflict_card, text="Conflict Summary", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+        self.side_conflict_text = self._text_widget(conflict_card, height=8)
+        self.side_conflict_text.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        ttk.Button(
+            conflict_card,
+            text="View Conflicts in Tab",
+            command=lambda: self.tabs.select(conflicts_tab),
+            style="Dark.TButton",
+        ).grid(
+            row=2,
+            column=0,
+            sticky="ew",
+            pady=(8, 0),
         )
-        ttk.Button(mod_controls, text="Priority Down", command=lambda: self.move_selected_priority(1)).pack(
-            side="left",
-            padx=(8, 0),
+
+        apply_card = ttk.Frame(details, style="Panel.TFrame", padding=12)
+        apply_card.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        ttk.Label(apply_card, text="Apply / Manifest Status", style="PanelTitle.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
         )
+        self.apply_status_text = self._text_widget(apply_card, height=7)
+        self.apply_status_text.grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
-        output_frame = ttk.Frame(content)
-        output_frame.columnconfigure(0, weight=1)
-        output_frame.rowconfigure(0, weight=1)
-        self.output = tk.Text(output_frame, width=100, height=16, wrap="word")
-        self.output.grid(row=0, column=0, sticky="nsew")
-        output_scroll = ttk.Scrollbar(output_frame, command=self.output.yview)
-        output_scroll.grid(row=0, column=1, sticky="ns")
-        self.output.configure(yscrollcommand=output_scroll.set)
+        footer = ttk.Frame(shell, style="Header.TFrame", padding=(14, 8))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.columnconfigure(0, weight=1)
+        ttk.Label(footer, textvariable=self.status, style="Footer.TLabel").grid(row=0, column=0, sticky="w")
+        self.progress = ttk.Progressbar(footer, mode="indeterminate", length=180)
+        self.progress.grid(row=0, column=1, sticky="e")
+        self.refresh_project_info()
 
-        content.add(mod_frame, weight=1)
-        content.add(output_frame, weight=1)
+    def _configure_style(self) -> None:
+        style = ttk.Style(self.root)
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
 
-        ttk.Label(frame, textvariable=self.status).grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        self.progress = ttk.Progressbar(frame, mode="indeterminate")
-        self.progress.grid(row=4, column=0, sticky="ew", pady=(4, 0))
+        style.configure("App.TFrame", background="#0f151d")
+        style.configure("Header.TFrame", background="#0b1017")
+        style.configure("Sidebar.TFrame", background="#101720")
+        style.configure("Panel.TFrame", background="#151c25", relief="solid", borderwidth=1)
+        style.configure("Title.TLabel", background="#0b1017", foreground="#f8fafc", font=("Segoe UI", 13, "bold"))
+        style.configure("HeaderText.TLabel", background="#0b1017", foreground="#f8fafc", font=("Segoe UI", 10, "bold"))
+        style.configure("Muted.TLabel", background="#0b1017", foreground="#9aa4b2", font=("Segoe UI", 9))
+        style.configure("Footer.TLabel", background="#0b1017", foreground="#cbd5e1", font=("Segoe UI", 9))
+        style.configure("SafeBadge.TLabel", background="#0d2417", foreground="#59d878", font=("Segoe UI", 9, "bold"))
+        style.configure("PanelTitle.TLabel", background="#151c25", foreground="#f8fafc", font=("Segoe UI", 11, "bold"))
+        style.configure("CardTitle.TLabel", background="#151c25", foreground="#cbd5e1", font=("Segoe UI", 9))
+        style.configure("CardValue.TLabel", background="#151c25", foreground="#f8fafc", font=("Segoe UI", 18, "bold"))
+        style.configure("CardSub.TLabel", background="#151c25", foreground="#9aa4b2", font=("Segoe UI", 8))
+        style.configure("TabTitle.TLabel", background="#151c25", foreground="#58a6ff", font=("Segoe UI", 9, "bold"))
+
+        for name, foreground, background in [
+            ("Dark.TButton", "#e5e7eb", "#1d2630"),
+            ("Blue.TButton", "#eff6ff", "#1e5799"),
+            ("Red.TButton", "#fff7ed", "#a83b2c"),
+            ("Purple.TButton", "#f5f3ff", "#33204f"),
+            ("Sidebar.TButton", "#d7dde7", "#101720"),
+            ("SidebarSelected.TButton", "#dbeafe", "#163e73"),
+        ]:
+            style.configure(name, foreground=foreground, background=background, borderwidth=1, padding=(12, 8))
+            style.map(name, background=[("active", "#263241")])
+
+        style.configure("Dark.TEntry", fieldbackground="#101720", foreground="#e5e7eb", insertcolor="#e5e7eb")
+        style.configure("Dark.TCombobox", fieldbackground="#1d2630", foreground="#f8fafc", arrowcolor="#cbd5e1")
+        style.configure("Dark.TNotebook", background="#151c25", borderwidth=0)
+        style.configure("Dark.TNotebook.Tab", background="#151c25", foreground="#cbd5e1", padding=(14, 8))
+        style.map("Dark.TNotebook.Tab", background=[("selected", "#111827")], foreground=[("selected", "#58a6ff")])
+        style.configure(
+            "Mod.Treeview",
+            background="#111820",
+            fieldbackground="#111820",
+            foreground="#dbe4ef",
+            rowheight=34,
+            borderwidth=0,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Mod.Treeview.Heading",
+            background="#151c25",
+            foreground="#cbd5e1",
+            relief="flat",
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.map("Mod.Treeview", background=[("selected", "#1f4f89")], foreground=[("selected", "#ffffff")])
+
+    def _metric_card(self, parent: ttk.Frame, title: str, key: str, accent: str) -> ttk.Frame:
+        value, subtitle = self.kpi_vars[key]
+        card = ttk.Frame(parent, style="Panel.TFrame", padding=12)
+        card.columnconfigure(0, weight=1)
+        stripe = tk.Frame(card, bg=accent, width=3)
+        stripe.grid(row=0, column=0, rowspan=3, sticky="nsw", padx=(0, 10))
+        ttk.Label(card, text=title, style="CardTitle.TLabel").grid(row=0, column=1, sticky="w")
+        ttk.Label(card, textvariable=value, style="CardValue.TLabel").grid(row=1, column=1, sticky="w", pady=(4, 0))
+        ttk.Label(card, textvariable=subtitle, style="CardSub.TLabel").grid(row=2, column=1, sticky="w", pady=(4, 0))
+        return card
+
+    def _text_widget(self, parent: ttk.Frame, height: int) -> tk.Text:
+        return tk.Text(
+            parent,
+            height=height,
+            wrap="word",
+            bg="#101720",
+            fg="#dbe4ef",
+            insertbackground="#dbe4ef",
+            relief="flat",
+            padx=8,
+            pady=8,
+            font=("Consolas", 9),
+        )
 
     def new_project(self) -> None:
         name = simpledialog.askstring("New ModForge Project", "Project name:")
@@ -190,6 +495,8 @@ class ModForgeApp:
             self.refresh_project_info()
             self.refresh_mod_table()
             self._write(self.scan_summary(project, self.packages))
+            self._write_to(self.plan_output, "Run Plan to preview deployment operations.")
+            self.refresh_selected_detail()
         except Exception as error:  # pragma: no cover - guarded GUI surface
             self._show_error("Scan failed", error)
             return
@@ -203,7 +510,14 @@ class ModForgeApp:
         try:
             packages = self.current_packages()
             plan = build_deployment_plan(project, packages)
-            self._write(render_deployment_report(project, plan))
+            report = render_deployment_report(project, plan)
+            self._write(report)
+            self._write_to(self.plan_output, report)
+            self._write_to(self.conflict_output, self.conflict_summary(plan))
+            self._write_to(self.side_conflict_text, self.compact_conflict_summary(plan))
+            self._write_to(self.apply_status_text, self.apply_status_summary(plan))
+            self.refresh_project_info()
+            self.refresh_mod_table()
         except Exception as error:  # pragma: no cover - guarded GUI surface
             self._show_error("Plan failed", error)
             return
@@ -241,7 +555,9 @@ class ModForgeApp:
             packages = self.current_packages()
             plan = build_deployment_plan(project, packages)
             manifest = apply_to_staging(project, plan, packages)
-            self._write(self.manifest_summary(manifest.to_dict()))
+            summary = self.manifest_summary(manifest.to_dict())
+            self._write(summary)
+            self._write_to(self.apply_status_text, summary)
         except Exception as error:  # pragma: no cover - guarded GUI surface
             self._show_error("Staging apply failed", error)
             return
@@ -262,7 +578,9 @@ class ModForgeApp:
             packages = self.current_packages()
             plan = build_deployment_plan(project, packages)
             manifest = apply_to_game(project, plan, packages)
-            self._write(self.manifest_summary(manifest.to_dict()))
+            summary = self.manifest_summary(manifest.to_dict())
+            self._write(summary)
+            self._write_to(self.apply_status_text, summary)
         except Exception as error:  # pragma: no cover - guarded GUI surface
             self._show_error("Game apply failed", error)
             return
@@ -291,6 +609,7 @@ class ModForgeApp:
         if not preview.to_dict().get("can_restore"):
             messagebox.showerror("ModForge Manager", f"Restore is blocked:\n\n{preview_summary}")
             self._write(preview_summary)
+            self._write_to(self.restore_output, preview_summary)
             return
         target = "selected files" if selected_paths else "all restorable files"
         if not messagebox.askyesno(
@@ -301,7 +620,9 @@ class ModForgeApp:
         self._start_busy("Restoring manifest...")
         try:
             manifest = restore_manifest(manifest_path, selected_paths)
-            self._write(self.manifest_summary(manifest.to_dict()))
+            summary = self.manifest_summary(manifest.to_dict())
+            self._write(summary)
+            self._write_to(self.restore_output, summary)
         except Exception as error:  # pragma: no cover - guarded GUI surface
             self._show_error("Restore failed", error)
             return
@@ -313,7 +634,9 @@ class ModForgeApp:
             return
         audit = audit_project(project)
         manifests = list_manifest_summaries(project)
-        self._write(self.project_health_summary(audit.to_dict(), [manifest.to_dict() for manifest in manifests]))
+        summary = self.project_health_summary(audit.to_dict(), [manifest.to_dict() for manifest in manifests])
+        self._write(summary)
+        self._write_to(self.apply_status_text, summary)
         status = "Project has issues." if audit.has_errors or audit.has_warnings else "Project health is OK."
         self.status.set(status)
 
@@ -329,7 +652,9 @@ class ModForgeApp:
             project.set_tool_path(tool_id, tool_path)
         self.save_project()
         checks = check_tools(project.external_tools)
-        self._write(self.tool_checks_summary(checks))
+        summary = self.tool_checks_summary(checks)
+        self._write(summary)
+        self._write_to(self.apply_status_text, summary)
         self.status.set("Saved external tool paths.")
 
     def manage_profiles(self) -> None:
@@ -344,6 +669,20 @@ class ModForgeApp:
         self.refresh_project_info()
         self.scan()
         self.status.set(f"Active user profile: {project.active_profile().name}")
+
+    def change_game_profile(self) -> None:
+        project = self.project
+        if project is None:
+            return
+        profile_id = self.profile_var.get().strip()
+        try:
+            project.game_profile = builtin_profile(profile_id)
+        except KeyError as error:
+            messagebox.showerror("ModForge Manager", str(error))
+            return
+        self.save_project()
+        self.scan()
+        self.status.set(f"Game profile: {profile_id}")
 
     def set_selected_enabled(self, enabled: bool) -> None:
         project = self._require_project()
@@ -378,12 +717,62 @@ class ModForgeApp:
     def refresh_project_info(self) -> None:
         if self.project is None:
             self.project_info.set("No project loaded.")
+            self.project_name_var.set("Project:  -")
+            self.project_path_var.set("Open a project to begin.")
+            self.profile_var.set("generic-folder")
+            self.mod_set_var.set("Default")
+            self._set_kpis(0, 0, 0, 0, "Ready", "No plan yet")
             return
+        profile = self.project.active_profile()
+        total = len(self.packages)
+        enabled = sum(1 for package in self.packages if package.enabled)
+        warnings = sum(len(package.warnings) for package in self.packages)
+        conflicts = 0
+        plan_state = "Ready" if self.packages else "No scan"
+        plan_subtitle = "Scan complete" if self.packages else "No plan yet"
+        if self.packages:
+            try:
+                plan = build_deployment_plan(self.project, self.packages)
+                conflicts = len(plan.conflicts)
+                summary = summarize_deployment_plan(plan)
+                plan_state = str(summary["risk_level"]).title()
+                plan_subtitle = f"{summary['operations']} ops, {conflicts} conflicts"
+            except Exception:
+                plan_state = "Blocked"
+                plan_subtitle = "Plan unavailable"
+
         self.project_info.set(
-            f"{self.project.name} | game: {self.project.game_root} | "
-            f"mods: {self.project.mods_dir} | profile: {self.project.game_profile.id} | "
-            f"user set: {self.project.active_profile().id} | staging: {self.project.staging_dir}"
+            f"{self.project.name} | game: {self.project.game_root} | mods: {self.project.mods_dir} | "
+            f"profile: {self.project.game_profile.id} | user set: {profile.id} | staging: {self.project.staging_dir}"
         )
+        self.project_name_var.set(f"Project:  {self.project.name}")
+        self.project_path_var.set(str(self.project_path or self.project.game_root))
+        self.profile_var.set(self.project.game_profile.id)
+        self.mod_set_var.set(profile.name)
+        self._set_kpis(total, enabled, conflicts, warnings, plan_state, plan_subtitle)
+
+    def _set_kpis(
+        self,
+        total: int,
+        enabled: int,
+        conflicts: int,
+        warnings: int,
+        plan_state: str,
+        plan_subtitle: str,
+    ) -> None:
+        enabled_ratio = (enabled / total * 100) if total else 0
+        self.kpi_vars["total"][0].set(str(total))
+        self.kpi_vars["total"][1].set(f"Scanned: {total}")
+        self.kpi_vars["enabled"][0].set(str(enabled))
+        self.kpi_vars["enabled"][1].set(f"{enabled_ratio:.1f}%")
+        self.kpi_vars["conflicts"][0].set(str(conflicts))
+        self.kpi_vars["conflicts"][1].set("Review needed" if conflicts else "No conflicts")
+        self.kpi_vars["warnings"][0].set(str(warnings))
+        self.kpi_vars["warnings"][1].set("Review recommended" if warnings else "All clear")
+        self.kpi_vars["plan"][0].set(plan_state)
+        self.kpi_vars["plan"][1].set(plan_subtitle)
+        self.kpi_vars["set"][0].set(self.mod_set_var.get())
+        self.kpi_vars["set"][1].set(f"{enabled} enabled")
 
     def set_mod_sort(self, column: str) -> None:
         if self.mod_sort_column == column:
@@ -395,20 +784,48 @@ class ModForgeApp:
 
     def refresh_mod_table(self) -> None:
         self.mod_table.delete(*self.mod_table.get_children())
-        for package in self.sorted_packages(self.packages, self.mod_sort_column, self.mod_sort_reverse):
+        self.table_rows = {}
+        query = self.search_var.get().strip().casefold() if hasattr(self, "search_var") else ""
+        conflict_counts = self._conflict_counts_by_mod()
+        shown = 0
+        sorted_packages = self.sorted_packages(
+            self.packages,
+            self.mod_sort_column,
+            self.mod_sort_reverse,
+        )
+        for index, package in enumerate(sorted_packages):
+            if query and query not in package.name.casefold() and query not in package.detected_type.casefold():
+                continue
+            row_id = f"{package.id}:{index}"
+            self.table_rows[row_id] = package.id
+            conflicts = conflict_counts.get(package.name, 0)
+            tags = []
+            if not package.enabled:
+                tags.append("disabled")
+            if package.warnings:
+                tags.append("warning")
+            if conflicts:
+                tags.append("conflict")
             self.mod_table.insert(
                 "",
                 "end",
-                iid=package.id,
-                text=package.name,
+                iid=row_id,
                 values=(
-                    "yes" if package.enabled else "no",
+                    "On" if package.enabled else "Off",
                     package.priority,
+                    package.name,
                     package.detected_type,
-                    len(package.files),
-                    len(package.warnings),
+                    package.path.name,
+                    "OK" if package.enabled else "Disabled",
+                    len(package.warnings) if package.warnings else "-",
+                    conflicts if conflicts else "-",
                 ),
+                tags=tuple(tags),
             )
+            shown += 1
+        enabled = sum(1 for package in self.packages if package.enabled)
+        self.mod_count_label.configure(text=f"{shown} mods shown ({enabled} enabled)")
+        self.refresh_selected_detail()
 
     def current_packages(self) -> list[ModPackage]:
         project = self._require_project()
@@ -423,11 +840,60 @@ class ModForgeApp:
         if not selected:
             messagebox.showinfo("ModForge Manager", "Select a mod first.")
             return None
-        mod_id = selected[0]
+        mod_id = self.table_rows.get(selected[0], selected[0])
         for package in self.current_packages():
             if package.id == mod_id:
                 return package
         return None
+
+    def refresh_selected_detail(self) -> None:
+        package = self.selected_package_or_none()
+        if package is None:
+            self.detail_title.set("No mod selected")
+            self._write_to(self.detail_text, "Select a mod to inspect its files, warnings, source, and status.")
+            return
+        warnings = "\n".join(f"- {warning}" for warning in package.warnings) or "-"
+        extracted = str(package.extracted_path) if package.extracted_path else "N/A"
+        detail = "\n".join(
+            [
+                f"Name: {package.name}",
+                f"Enabled: {'yes' if package.enabled else 'no'}",
+                f"Priority: {package.priority}",
+                f"Type: {package.detected_type}",
+                f"Source: {package.path}",
+                f"Files: {len(package.files)}",
+                f"Extracted: {extracted}",
+                "",
+                "Warnings:",
+                warnings,
+            ]
+        )
+        self.detail_title.set(package.name)
+        self._write_to(self.detail_text, detail)
+
+    def selected_package_or_none(self) -> ModPackage | None:
+        selected = self.mod_table.selection()
+        if not selected:
+            return None
+        mod_id = self.table_rows.get(selected[0], selected[0])
+        for package in self.current_packages():
+            if package.id == mod_id:
+                return package
+        return None
+
+    def _conflict_counts_by_mod(self) -> dict[str, int]:
+        project = self.project
+        if project is None or not self.packages:
+            return {}
+        try:
+            plan = build_deployment_plan(project, self.packages)
+        except Exception:
+            return {}
+        counts: dict[str, int] = {}
+        for conflict in plan.conflicts:
+            for mod_name in conflict.mods:
+                counts[mod_name] = counts.get(mod_name, 0) + 1
+        return counts
 
     def save_project(self) -> None:
         if self.project and self.project_path:
@@ -529,6 +995,49 @@ class ModForgeApp:
         return "\n".join(lines)
 
     @staticmethod
+    def conflict_summary(plan) -> str:
+        if not plan.conflicts:
+            return "No destination conflicts detected."
+        lines = [f"Destination conflicts: {len(plan.conflicts)}", ""]
+        for conflict in plan.conflicts:
+            lines.append(f"- {conflict.destination_path}")
+            lines.append(f"  winner: {conflict.winning_mod}")
+            lines.append(f"  mods: {', '.join(conflict.mods)}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def compact_conflict_summary(plan) -> str:
+        if not plan.conflicts:
+            return "No conflicts.\n\nStaging: safe\nGame apply: safe"
+        top_paths = "\n".join(f"- {conflict.destination_path}" for conflict in plan.conflicts[:5])
+        return "\n".join(
+            [
+                f"{len(plan.conflicts)} destination conflict(s)",
+                "",
+                "Staging: winning files overwrite staging only",
+                "Game: existing files may be backed up and overwritten",
+                "",
+                "Top paths:",
+                top_paths,
+            ]
+        )
+
+    @staticmethod
+    def apply_status_summary(plan) -> str:
+        summary = summarize_deployment_plan(plan)
+        return "\n".join(
+            [
+                "Staging: Ready",
+                f"Winning operations: {summary['winning_operations']}",
+                "",
+                "Game Apply:",
+                "Requires confirmation",
+                f"Conflicts: {summary['conflicts']}",
+                f"Warnings: {summary['warnings']}",
+            ]
+        )
+
+    @staticmethod
     def manifest_record_rows(manifest: InstallManifest) -> list[tuple[str, str, str, str]]:
         rows = []
         for record in manifest.records:
@@ -545,8 +1054,12 @@ class ModForgeApp:
         return self.project
 
     def _write(self, text: str) -> None:
-        self.output.delete("1.0", tk.END)
-        self.output.insert(tk.END, text)
+        self._write_to(self.output, text)
+
+    def _write_to(self, widget: tk.Text, text: str) -> None:
+        widget.configure(state="normal")
+        widget.delete("1.0", tk.END)
+        widget.insert(tk.END, text)
 
     def _start_busy(self, label: str) -> None:
         self.status.set(label)
@@ -775,7 +1288,11 @@ class UserProfileDialog:
         controls = ttk.Frame(frame)
         controls.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         ttk.Button(controls, text="Switch", command=self.switch).pack(side="left")
-        ttk.Button(controls, text="Create", command=lambda: self.create(copy_active=False)).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            controls,
+            text="Create",
+            command=lambda: self.create(copy_active=False),
+        ).pack(side="left", padx=(8, 0))
         ttk.Button(controls, text="Clone Active", command=lambda: self.create(copy_active=True)).pack(
             side="left",
             padx=(8, 0),
