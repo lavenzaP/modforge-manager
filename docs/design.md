@@ -5,12 +5,17 @@ ModForge Manager is split into three layers:
 1. Core domain logic in `src/modforge/core`.
 2. Optional adapters in `src/modforge/containers`, `src/modforge/tools`, and
    `src/modforge/translation`.
-3. Thin user interfaces in `src/modforge/cli.py` and `src/modforge/gui`.
+3. Thin user interfaces in `src/modforge/cli.py`, `src/modforge/app.py`, and
+   future richer widgets under `src/modforge/gui`.
 
 The first scaffold keeps runtime dependencies at zero so tests can run in a
 fresh Windows Python environment. Richer dependencies such as PySide6, Typer,
 Pydantic, and archive-specific libraries can be added after the core behavior is
 stable.
+
+The current GUI is a lightweight `tkinter` shell. It should remain a thin caller
+of core functions: project creation/loading, mod scanning, profile edits,
+planning, staging/game apply, restore, and report saving.
 
 ## Data Flow
 

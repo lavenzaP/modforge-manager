@@ -12,7 +12,7 @@
 - Staging-only apply with install manifest. Done.
 - Game-root apply with backup manifest and restore. Done.
 - Basic translation extraction. Done.
-- Basic GUI shell. Done.
+- Basic GUI project workflow. Done.
 - Synthetic fixture tests. Done.
 
 ## Phase 2

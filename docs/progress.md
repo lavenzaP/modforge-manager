@@ -30,3 +30,13 @@
 - Project init now resolves the default `.modforge/staging` directory beside the
   project file.
 - Expanded tests from 14 to 15 stdlib `unittest` cases.
+
+## GUI Workflow Pass
+
+- GUI can now create and open project files.
+- GUI shows a sortable-style mod table with enabled state, priority, package
+  type, file count, and warning count.
+- GUI can enable/disable selected mods and move priorities up/down.
+- GUI can plan, save reports, apply to staging, apply to game, and restore
+  manifests through the same core functions used by the CLI.
+- Expanded tests from 15 to 16 stdlib `unittest` cases.

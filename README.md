@@ -19,8 +19,9 @@ tool checks, and fake-fixture-tested core behavior.
 - Enable/disable mods and set a profile priority order.
 - Copy winning files into a staging directory with an install manifest.
 - Extract basic JSON/CSV/TXT strings into a translation CSV.
-- Provide a lightweight desktop GUI shell while core logic remains testable
-  without a GUI.
+- Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
+  toggling enabled state, changing priority, planning, reporting, applying, and
+  restoring.
 
 ## Quick Start
 
@@ -60,6 +61,9 @@ Run the lightweight GUI:
 $env:PYTHONPATH = "src"
 python -m modforge.app
 ```
+
+The GUI intentionally uses the Python standard library `tkinter` for the first
+usable version, so it can run before optional PySide6 work begins.
 
 Run tests with stdlib only:
 
