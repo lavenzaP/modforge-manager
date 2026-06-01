@@ -50,3 +50,10 @@
   `ignored_patterns`, and `supported_containers`.
 - GUI project creation prompts for a built-in profile id.
 - Expanded tests from 16 to 20 stdlib `unittest` cases.
+
+## GUI External Tools
+
+- Added a GUI external tools dialog for configuring paths to 7-Zip, Godot PCK
+  Tool, UnrealPak, and crash dump helpers.
+- GUI tool checks use the same warning-only core checker as the CLI.
+- Expanded tests from 20 to 21 stdlib `unittest` cases.

@@ -13,6 +13,7 @@
 - Game-root apply with backup manifest and restore. Done.
 - Basic translation extraction. Done.
 - Basic GUI project workflow. Done.
+- GUI external tool settings. Done.
 - Built-in game profile templates. Done.
 - Profile-aware deployment rules and ignored patterns. Done.
 - Synthetic fixture tests. Done.
@@ -22,7 +23,7 @@
 - Richer backup browser and selective restore UI.
 - User profiles and enabled mod sets.
 - More game-specific profile templates.
-- Real GUI tables and progress surfaces.
+- Real GUI tables, tool validation details, and progress surfaces.
 - Optional PySide6 UI.
 - Real archive extraction for PCK/PAK through external tools.
 

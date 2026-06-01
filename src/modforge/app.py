@@ -12,6 +12,8 @@ from modforge.core.game_profile import builtin_profiles
 from modforge.core.mod_package import ModPackage, scan_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
+from modforge.tools.checker import ToolCheck, check_tools
+from modforge.tools.registry import KNOWN_TOOLS
 
 
 def main() -> int:
@@ -53,6 +55,7 @@ class ModForgeApp:
         ttk.Button(toolbar, text="Apply Staging", command=self.apply_staging).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Apply Game", command=self.apply_game).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Restore", command=self.restore).pack(side="left", padx=(8, 0))
+        ttk.Button(toolbar, text="Tools", command=self.configure_tools).pack(side="left", padx=(8, 0))
 
         self.project_info = tk.StringVar(value="No project loaded.")
         ttk.Label(frame, textvariable=self.project_info).grid(row=1, column=0, sticky="ew", pady=(0, 8))
@@ -249,6 +252,21 @@ class ModForgeApp:
         self._write(self.manifest_summary(manifest.to_dict()))
         self.status.set(f"Restored manifest {manifest.manifest_id}")
 
+    def configure_tools(self) -> None:
+        project = self._require_project()
+        if project is None:
+            return
+        dialog = ToolSettingsDialog(self.root, project.external_tools)
+        configured_paths = dialog.show()
+        if configured_paths is None:
+            return
+        for tool_id, tool_path in configured_paths.items():
+            project.set_tool_path(tool_id, tool_path)
+        self.save_project()
+        checks = check_tools(project.external_tools)
+        self._write(self.tool_checks_summary(checks))
+        self.status.set("Saved external tool paths.")
+
     def set_selected_enabled(self, enabled: bool) -> None:
         project = self._require_project()
         if project is None:
@@ -345,6 +363,16 @@ class ModForgeApp:
             ]
         )
 
+    @staticmethod
+    def tool_checks_summary(checks: list[ToolCheck]) -> str:
+        lines = ["External tools:", ""]
+        for check in checks:
+            state = "OK" if check.exists else "MISSING"
+            detail = check.path if check.exists else check.warning
+            lines.append(f"{state:7} {check.tool_id} ({check.label})")
+            lines.append(f"        {detail}")
+        return "\n".join(lines)
+
     def _require_project(self) -> ModProject | None:
         if self.project is None:
             messagebox.showinfo("ModForge Manager", "Open a project file first.")
@@ -354,6 +382,80 @@ class ModForgeApp:
     def _write(self, text: str) -> None:
         self.output.delete("1.0", tk.END)
         self.output.insert(tk.END, text)
+
+
+class ToolSettingsDialog:
+    def __init__(self, parent: tk.Tk, configured_paths: dict[str, str]) -> None:
+        self.parent = parent
+        self.result: dict[str, str] | None = None
+        self.window = tk.Toplevel(parent)
+        self.window.title("External Tools")
+        self.window.resizable(True, False)
+        self.window.transient(parent)
+
+        frame = ttk.Frame(self.window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.window.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+
+        self.variables: dict[str, tk.StringVar] = {}
+        for row, (tool_id, label) in enumerate(KNOWN_TOOLS.items()):
+            ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            variable = tk.StringVar(value=configured_paths.get(tool_id, ""))
+            self.variables[tool_id] = variable
+            ttk.Entry(frame, textvariable=variable, width=64).grid(row=row, column=1, sticky="ew", padx=(8, 8), pady=3)
+            ttk.Button(frame, text="Browse", command=lambda key=tool_id: self.browse(key)).grid(
+                row=row,
+                column=2,
+                sticky="ew",
+                pady=3,
+            )
+
+        self.check_text = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=self.check_text, justify="left").grid(
+            row=len(KNOWN_TOOLS),
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(10, 0),
+        )
+
+        controls = ttk.Frame(frame)
+        controls.grid(row=len(KNOWN_TOOLS) + 1, column=0, columnspan=3, sticky="e", pady=(12, 0))
+        ttk.Button(controls, text="Check", command=self.check).pack(side="left")
+        ttk.Button(controls, text="Save", command=self.save).pack(side="left", padx=(8, 0))
+        ttk.Button(controls, text="Cancel", command=self.cancel).pack(side="left", padx=(8, 0))
+
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
+
+    def show(self) -> dict[str, str] | None:
+        self.window.grab_set()
+        self.window.wait_window()
+        return self.result
+
+    def browse(self, tool_id: str) -> None:
+        selected = filedialog.askopenfilename(title=f"Select {KNOWN_TOOLS[tool_id]}")
+        if selected:
+            self.variables[tool_id].set(selected)
+
+    def check(self) -> None:
+        checks = check_tools(self.current_paths())
+        lines = []
+        for check in checks:
+            state = "OK" if check.exists else "missing"
+            lines.append(f"{check.label}: {state}")
+        self.check_text.set("\n".join(lines))
+
+    def save(self) -> None:
+        self.result = self.current_paths()
+        self.window.destroy()
+
+    def cancel(self) -> None:
+        self.result = None
+        self.window.destroy()
+
+    def current_paths(self) -> dict[str, str]:
+        return {tool_id: variable.get().strip() for tool_id, variable in self.variables.items()}
 
 
 if __name__ == "__main__":

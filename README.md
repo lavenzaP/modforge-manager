@@ -16,13 +16,15 @@ tool checks, and fake-fixture-tested core behavior.
 - Detect destination conflicts between enabled mods.
 - Generate a dry-run deployment plan.
 - Render a Markdown report.
-- Check configured external tool paths without failing the workflow.
+- Check configured external tool paths from the CLI or GUI without failing the
+  workflow.
 - Enable/disable mods and set a profile priority order.
 - Copy winning files into a staging directory with an install manifest.
 - Extract basic JSON/CSV/TXT strings into a translation CSV.
 - Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
   toggling enabled state, changing priority, planning, reporting, applying, and
   restoring.
+- Configure and check external tool paths from the GUI.
 
 ## Quick Start
 
