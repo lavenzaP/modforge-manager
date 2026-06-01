@@ -2,21 +2,25 @@
 
 ## Phase 1
 
-- Project registry.
-- Loose folder scanning.
-- Dry-run deployment plans.
-- Conflict reports.
-- External tool checks.
-- Basic GUI shell.
-- Synthetic fixture tests.
+- Project registry. Done.
+- Loose folder scanning. Done.
+- User profile enabled/disabled state and priority order. Done.
+- Dry-run deployment plans. Done.
+- Conflict reports. Done.
+- External tool checks. Done.
+- Staging-only apply with install manifest. Done.
+- Basic translation extraction. Done.
+- Basic GUI shell. Done.
+- Synthetic fixture tests. Done.
 
 ## Phase 2
 
-- Safer apply flow with install manifests.
-- Backup and restore.
+- Backup and restore for real game-folder writes.
 - User profiles and enabled mod sets.
 - More game profile templates.
 - Real GUI tables and progress surfaces.
+- Optional PySide6 UI.
+- ZIP listing/extraction adapter.
 
 ## Deferred
 

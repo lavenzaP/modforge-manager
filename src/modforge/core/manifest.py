@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import json
+from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -24,3 +26,6 @@ class InstallManifest:
             "skipped_files": self.skipped_files,
             "backups": self.backups,
         }
+
+    def save(self, path: Path) -> None:
+        path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")

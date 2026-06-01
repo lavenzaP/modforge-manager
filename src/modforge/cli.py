@@ -7,10 +7,13 @@ import json
 from pathlib import Path
 
 from modforge import __version__
+from modforge.core.deployer import apply_to_staging
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
+from modforge.tools.checker import check_tools
+from modforge.translation.exporter import extract_strings, write_entries_csv
 
 DEFAULT_PROJECT_FILE = Path("modforge.project.json")
 
@@ -51,6 +54,61 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--output", type=Path, default=Path(".modforge/conflict-report.md"))
     report.set_defaults(handler=handle_report)
 
+    profile = subcommands.add_parser("profile", help="Manage enabled mods and priorities")
+    profile_subcommands = profile.add_subparsers(required=True)
+    profile_show = profile_subcommands.add_parser("show", help="Show active profile")
+    profile_show.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_show.add_argument("--json", action="store_true")
+    profile_show.set_defaults(handler=handle_profile_show)
+
+    profile_enable = profile_subcommands.add_parser("enable", help="Enable a mod id")
+    profile_enable.add_argument("mod_id")
+    profile_enable.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_enable.set_defaults(handler=handle_profile_enable)
+
+    profile_disable = profile_subcommands.add_parser("disable", help="Disable a mod id")
+    profile_disable.add_argument("mod_id")
+    profile_disable.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_disable.set_defaults(handler=handle_profile_disable)
+
+    profile_priority = profile_subcommands.add_parser(
+        "set-priority",
+        help="Set mod priority order from low to high priority",
+    )
+    profile_priority.add_argument("mod_ids", nargs="+")
+    profile_priority.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_priority.set_defaults(handler=handle_profile_set_priority)
+
+    tools = subcommands.add_parser("tools", help="Manage external tool paths")
+    tools_subcommands = tools.add_subparsers(required=True)
+    tools_check = tools_subcommands.add_parser("check", help="Check configured external tools")
+    tools_check.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    tools_check.add_argument("--json", action="store_true")
+    tools_check.set_defaults(handler=handle_tools_check)
+
+    tools_set = tools_subcommands.add_parser("set", help="Set one external tool path")
+    tools_set.add_argument("tool_id")
+    tools_set.add_argument("path")
+    tools_set.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    tools_set.set_defaults(handler=handle_tools_set)
+
+    apply = subcommands.add_parser("apply-staging", help="Copy winning files into staging")
+    apply.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    apply.add_argument("--yes", action="store_true", help="Confirm staging write")
+    apply.add_argument("--json", action="store_true")
+    apply.set_defaults(handler=handle_apply_staging)
+
+    translation = subcommands.add_parser("translation", help="Translation workspace helpers")
+    translation_subcommands = translation.add_subparsers(required=True)
+    translation_extract = translation_subcommands.add_parser(
+        "extract",
+        help="Extract strings from JSON/CSV/TXT files",
+    )
+    translation_extract.add_argument("--source", required=True, type=Path)
+    translation_extract.add_argument("--output", required=True, type=Path)
+    translation_extract.add_argument("--json", action="store_true")
+    translation_extract.set_defaults(handler=handle_translation_extract)
+
     return parser
 
 
@@ -68,7 +126,7 @@ def handle_project_init(args: argparse.Namespace) -> int:
 
 def handle_scan_mods(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
-    packages = scan_mods(project.mods_dir)
+    packages = scan_mods(project.mods_dir, project.active_profile())
     payload = [package.to_dict() for package in packages]
     if args.json:
         print(json.dumps(payload, indent=2))
@@ -80,7 +138,7 @@ def handle_scan_mods(args: argparse.Namespace) -> int:
 
 def handle_plan(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
-    plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+    plan = build_deployment_plan(project, scan_mods(project.mods_dir, project.active_profile()))
     if args.json:
         print(json.dumps(plan.to_dict(), indent=2))
     else:
@@ -93,10 +151,95 @@ def handle_plan(args: argparse.Namespace) -> int:
 
 def handle_report(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
-    plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+    plan = build_deployment_plan(project, scan_mods(project.mods_dir, project.active_profile()))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(render_deployment_report(project, plan), encoding="utf-8")
     print(f"Wrote {args.output}")
+    return 0
+
+
+def handle_profile_show(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    profile = project.active_profile()
+    if args.json:
+        print(json.dumps(profile.to_dict(), indent=2))
+    else:
+        print(f"Active profile: {profile.name} ({profile.id})")
+        print(f"Disabled mods: {', '.join(profile.disabled_mod_ids) or '-'}")
+        print(f"Priority order: {', '.join(profile.mod_priority_order) or '-'}")
+    return 0
+
+
+def handle_profile_enable(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    project.set_mod_enabled(args.mod_id, True)
+    project.save(args.project_file)
+    print(f"Enabled {args.mod_id}")
+    return 0
+
+
+def handle_profile_disable(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    project.set_mod_enabled(args.mod_id, False)
+    project.save(args.project_file)
+    print(f"Disabled {args.mod_id}")
+    return 0
+
+
+def handle_profile_set_priority(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    project.set_priority_order(args.mod_ids)
+    project.save(args.project_file)
+    print("Updated priority order")
+    return 0
+
+
+def handle_tools_check(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    checks = check_tools(project.external_tools)
+    if args.json:
+        print(json.dumps([check.to_dict() for check in checks], indent=2))
+    else:
+        for check in checks:
+            state = "ok" if check.exists else "missing"
+            print(f"{state:7} {check.tool_id}: {check.path or check.warning}")
+    return 0
+
+
+def handle_tools_set(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    project.set_tool_path(args.tool_id, args.path)
+    project.save(args.project_file)
+    print(f"Set {args.tool_id}")
+    return 0
+
+
+def handle_apply_staging(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print("Refusing to write staging without --yes. Run `modforge plan` first.")
+        return 2
+
+    project = ModProject.load(args.project_file)
+    packages = scan_mods(project.mods_dir, project.active_profile())
+    plan = build_deployment_plan(project, packages)
+    manifest = apply_to_staging(project, plan, packages)
+    if args.json:
+        print(json.dumps(manifest.to_dict(), indent=2))
+    else:
+        print(f"Applied to staging: {project.staging_dir}")
+        print(f"Copied: {len(manifest.copied_files)}")
+        print(f"Overwritten: {len(manifest.overwritten_files)}")
+        print(f"Skipped: {len(manifest.skipped_files)}")
+    return 0
+
+
+def handle_translation_extract(args: argparse.Namespace) -> int:
+    entries = extract_strings(args.source)
+    write_entries_csv(entries, args.output)
+    if args.json:
+        print(json.dumps({"entries": len(entries), "output": str(args.output)}, indent=2))
+    else:
+        print(f"Extracted {len(entries)} strings to {args.output}")
     return 0
 
 

@@ -9,6 +9,7 @@ from bootstrap import ensure_src_path
 ensure_src_path()
 
 from modforge.translation.csv_extractor import extract_csv_strings
+from modforge.translation.exporter import extract_strings, write_entries_csv
 from modforge.translation.json_extractor import extract_json_strings
 
 
@@ -23,6 +24,10 @@ class TranslationExtractorTests(unittest.TestCase):
 
             self.assertEqual(extract_json_strings(json_path)[0].source, "Start Game")
             self.assertEqual(extract_csv_strings(csv_path)[0].source, "hello")
+            entries = extract_strings(root)
+            output = root / "extracted.csv"
+            write_entries_csv(entries, output)
+            self.assertTrue(output.exists())
 
 
 if __name__ == "__main__":

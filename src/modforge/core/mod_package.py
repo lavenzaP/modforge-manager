@@ -7,6 +7,7 @@ from pathlib import Path
 
 from modforge.containers.detector import detect_container
 from modforge.core.paths import as_posix_relative, iter_files, normalize_path
+from modforge.core.user_profile import UserProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +43,7 @@ class ModPackage:
         }
 
 
-def scan_mods(mods_dir: str | Path) -> list[ModPackage]:
+def scan_mods(mods_dir: str | Path, user_profile: UserProfile | None = None) -> list[ModPackage]:
     root = normalize_path(mods_dir)
     if not root.exists():
         return []
@@ -61,8 +62,12 @@ def scan_mods(mods_dir: str | Path) -> list[ModPackage]:
                 id=item.stem.lower().replace(" ", "-"),
                 name=item.stem if item.is_file() else item.name,
                 path=item,
-                enabled=True,
-                priority=index,
+                enabled=user_profile.is_enabled(item.stem.lower().replace(" ", "-"))
+                if user_profile
+                else True,
+                priority=user_profile.priority_for(item.stem.lower().replace(" ", "-"), index)
+                if user_profile
+                else index,
                 detected_type=detected.container_type,
                 files=files,
                 warnings=warnings,
