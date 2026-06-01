@@ -7,7 +7,7 @@ from bootstrap import ensure_src_path
 
 ensure_src_path()
 
-from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
 
@@ -54,6 +54,22 @@ class UserProfileTests(unittest.TestCase):
         self.assertEqual([package.enabled for package in packages], [False, True])
         self.assertEqual(len(plan.conflicts), 0)
         self.assertTrue(all(operation.source_mod == "Overhaul" for operation in plan.operations))
+
+    def test_disabling_mhw_patch_removes_conflict_but_keeps_warning_risk(self) -> None:
+        project = ModProject.create(
+            name="MHW Demo",
+            game_root=FIXTURES / "mhw_reframework_game",
+            mods_dir=FIXTURES / "mhw_reframework_mods",
+            staging_dir=FIXTURES / "staging",
+            game_profile="mhw-reframework",
+        )
+        project.set_mod_enabled("nativeswordpatch", False)
+        packages = scan_mods(project.mods_dir, project.active_profile())
+        plan = build_deployment_plan(project, packages)
+
+        self.assertEqual(len(plan.operations), 4)
+        self.assertEqual(plan.conflicts, [])
+        self.assertEqual(summarize_deployment_plan(plan)["risk_level"], "medium")
 
 
 if __name__ == "__main__":

@@ -135,6 +135,16 @@ def builtin_profiles() -> list[GameProfile]:
             supported_containers=["loose_folder", "zip"],
         ),
         GameProfile(
+            id="mhw-reframework",
+            display_name="Monster Hunter Wilds / REFramework NativePC Workflow",
+            deployment_rules=[
+                DeploymentRule(source_pattern="reframework/**"),
+                DeploymentRule(source_pattern="nativePC/**"),
+            ],
+            ignored_patterns=["**/.DS_Store", "**/Thumbs.db", "README*", "*.md"],
+            supported_containers=["loose_folder", "zip"],
+        ),
+        GameProfile(
             id="unity-bepinex",
             display_name="Unity BepInEx Plugin Workflow",
             deployment_rules=[

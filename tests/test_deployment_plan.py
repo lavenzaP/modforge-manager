@@ -8,7 +8,7 @@ from bootstrap import ensure_src_path
 
 ensure_src_path()
 
-from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
 
@@ -161,6 +161,46 @@ class DeploymentPlanTests(unittest.TestCase):
                     "r6/scripts/patch.reds",
                 ],
             )
+
+    def test_mhw_reframework_profile_reports_conflict_warning_and_summary(self) -> None:
+        project = ModProject.create(
+            name="MHW Demo",
+            game_root=FIXTURES / "mhw_reframework_game",
+            mods_dir=FIXTURES / "mhw_reframework_mods",
+            staging_dir=FIXTURES / "staging",
+            game_profile="mhw-reframework",
+        )
+
+        plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+        summary = summarize_deployment_plan(plan)
+
+        self.assertEqual(len(plan.operations), 6)
+        self.assertEqual(len(plan.conflicts), 1)
+        self.assertEqual(
+            plan.conflicts[0].to_dict(),
+            {
+                "destination_path": "nativePC/wp/swo/swo001/mod/swo001.mod3",
+                "mods": ["NativeSword", "NativeSwordPatch"],
+                "winning_mod": "NativeSwordPatch",
+            },
+        )
+        self.assertEqual(
+            plan.warnings,
+            ["LooseNotes: no deployment rule for docs/install.txt"],
+        )
+        self.assertEqual(
+            summary,
+            {
+                "project_name": "MHW Demo",
+                "dry_run": True,
+                "operations": 6,
+                "winning_operations": 5,
+                "skipped_by_conflict": 1,
+                "conflicts": 1,
+                "warnings": 1,
+                "risk_level": "high",
+            },
+        )
 
 
 if __name__ == "__main__":

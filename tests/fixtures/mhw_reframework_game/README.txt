@@ -1,0 +1,1 @@
+synthetic MHW game root

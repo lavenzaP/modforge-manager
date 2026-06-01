@@ -6,7 +6,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
+from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.game_profile import builtin_profiles
 from modforge.core.manifest import InstallManifest
@@ -279,8 +279,21 @@ class ModForgeApp:
         if selection is None:
             return
         manifest_path, selected_paths = selection
+        try:
+            preview = preview_restore_manifest(manifest_path, selected_paths)
+        except Exception as error:  # pragma: no cover - guarded GUI surface
+            self._show_error("Restore preview failed", error)
+            return
+        preview_summary = self.restore_preview_summary(preview.to_dict())
+        if not preview.to_dict().get("can_restore"):
+            messagebox.showerror("ModForge Manager", f"Restore is blocked:\n\n{preview_summary}")
+            self._write(preview_summary)
+            return
         target = "selected files" if selected_paths else "all restorable files"
-        if not messagebox.askyesno("Restore manifest", f"Restore {target} from {manifest_path.name}?"):
+        if not messagebox.askyesno(
+            "Restore manifest",
+            f"Restore {target} from {manifest_path.name}?\n\n{preview_summary}",
+        ):
             return
         self._start_busy("Restoring manifest...")
         try:
@@ -422,6 +435,24 @@ class ModForgeApp:
                 f"Backup dir: {manifest.get('backup_dir')}",
             ]
         )
+
+    @staticmethod
+    def restore_preview_summary(preview: dict[str, object]) -> str:
+        records = preview.get("records", [])
+        warnings = preview.get("warnings", [])
+        lines = [
+            f"Manifest: {preview.get('manifest_id')}",
+            f"Target root: {preview.get('target_root')}",
+            f"Can restore: {'yes' if preview.get('can_restore') else 'no'}",
+            f"Will restore backups: {preview.get('restore_from_backup', 0)}",
+            f"Will delete newly copied files: {preview.get('delete_copied_files', 0)}",
+            f"Restore actions: {len(records)}",
+        ]
+        for warning in warnings:
+            lines.append(f"WARNING: {warning}")
+        for record in records:
+            lines.append(f"- {record['destination_path']}: {record['action']}")
+        return "\n".join(lines)
 
     @staticmethod
     def tool_checks_summary(checks: list[ToolCheck]) -> str:

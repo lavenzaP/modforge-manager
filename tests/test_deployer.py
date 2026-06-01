@@ -9,8 +9,9 @@ from bootstrap import ensure_src_path
 
 ensure_src_path()
 
-from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
+from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.manifest import InstallManifest, InstallRecord
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
 
@@ -82,6 +83,16 @@ class DeployerTests(unittest.TestCase):
             self.assertEqual(manifest.copied_files, ["textures/new.txt"])
             self.assertTrue(manifest_path.exists())
 
+            preview = preview_restore_manifest(manifest_path)
+            actions = {record.destination_path: record.action for record in preview.records}
+            self.assertEqual(actions["config/settings.json"], "restore-backup")
+            self.assertEqual(actions["textures/new.txt"], "remove-created-file")
+            self.assertFalse(preview.warnings)
+            preview_payload = preview.to_dict()
+            self.assertTrue(preview_payload["can_restore"])
+            self.assertEqual(preview_payload["restore_from_backup"], 1)
+            self.assertEqual(preview_payload["delete_copied_files"], 1)
+
             restored = restore_manifest(manifest_path)
 
             self.assertTrue(restored.restored_at)
@@ -115,6 +126,126 @@ class DeployerTests(unittest.TestCase):
             restore_manifest(manifest_path, ["textures/new.txt"])
 
             self.assertFalse((game / "textures" / "new.txt").exists())
+
+    def test_restore_preview_reports_missing_backup_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            (mods / "Patch" / "config").mkdir(parents=True)
+            (game / "config").mkdir(parents=True)
+            (mods / "Patch" / "config" / "settings.json").write_text("patched", encoding="utf-8")
+            (game / "config" / "settings.json").write_text("original", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_game(project, plan, packages)
+            manifest_path = staging.parent / "manifests" / f"{manifest.manifest_id}.json"
+            backup_path = Path(manifest.records[0].backup_path)
+            backup_path.unlink()
+
+            preview = preview_restore_manifest(manifest_path)
+
+            self.assertIn("Backup is missing", preview.warnings[0])
+            self.assertFalse(preview.to_dict()["can_restore"])
+            self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "patched")
+
+            with self.assertRaises(FileNotFoundError):
+                restore_manifest(manifest_path)
+            self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "patched")
+
+    def test_restore_rejects_partial_unmatched_selected_paths_before_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            (mods / "Patch" / "config").mkdir(parents=True)
+            (mods / "Patch" / "textures").mkdir(parents=True)
+            (game / "config").mkdir(parents=True)
+            (mods / "Patch" / "config" / "settings.json").write_text("patched", encoding="utf-8")
+            (mods / "Patch" / "textures" / "new.txt").write_text("new", encoding="utf-8")
+            (game / "config" / "settings.json").write_text("original", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_game(project, plan, packages)
+            manifest_path = staging.parent / "manifests" / f"{manifest.manifest_id}.json"
+
+            preview = preview_restore_manifest(manifest_path, ["config/settings.json", "missing.txt"])
+            self.assertIn("No restorable record matched selected path: missing.txt", preview.warnings)
+
+            with self.assertRaises(ValueError):
+                restore_manifest(manifest_path, ["config/settings.json", "missing.txt"])
+
+            self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "patched")
+
+    def test_restore_preview_and_restore_block_unsafe_manifest_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            manifest_path = root / "manifest.json"
+            game.mkdir()
+            manifest = InstallManifest(
+                manifest_id="unsafe",
+                target="game",
+                target_root=str(game),
+                records=[
+                    InstallRecord(
+                        destination_path="../escape.txt",
+                        source_mod="Patch",
+                        source_path="../escape.txt",
+                        status="copied",
+                    )
+                ],
+            )
+            manifest.save(manifest_path)
+
+            preview = preview_restore_manifest(manifest_path)
+
+            self.assertEqual(preview.records[0].action, "blocked")
+            self.assertIn("Refusing to write outside staging directory", preview.warnings[0])
+            self.assertFalse(preview.to_dict()["can_restore"])
+            with self.assertRaises(ValueError):
+                restore_manifest(manifest_path)
+
+    def test_restore_blocks_backups_outside_manifest_backup_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            backup_dir = root / "backups" / "manifest"
+            outside_backup = root / "outside-backup.txt"
+            manifest_path = root / "manifest.json"
+            game.mkdir()
+            backup_dir.mkdir(parents=True)
+            outside_backup.write_text("original", encoding="utf-8")
+            (game / "settings.txt").write_text("patched", encoding="utf-8")
+            manifest = InstallManifest(
+                manifest_id="outside-backup",
+                target="game",
+                target_root=str(game),
+                backup_dir=str(backup_dir),
+                records=[
+                    InstallRecord(
+                        destination_path="settings.txt",
+                        source_mod="Patch",
+                        source_path="settings.txt",
+                        status="overwritten",
+                        backup_path=str(outside_backup),
+                    )
+                ],
+            )
+            manifest.save(manifest_path)
+
+            preview = preview_restore_manifest(manifest_path)
+
+            self.assertIn("Backup is outside manifest backup directory", preview.warnings[0])
+            with self.assertRaises(ValueError):
+                restore_manifest(manifest_path)
+            self.assertEqual((game / "settings.txt").read_text(encoding="utf-8"), "patched")
 
 
 if __name__ == "__main__":

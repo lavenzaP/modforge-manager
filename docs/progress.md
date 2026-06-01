@@ -126,3 +126,19 @@
 - Added dependency-check and model-helper tests that run even when PySide6 is
   not installed.
 - Expanded tests from 40 to 44 stdlib `unittest` cases.
+
+## Guided Safe Workflow Foundation
+
+- Consulted ChatGPT through the Whale/CS WebLatch flow and selected Guided Safe
+  Workflow V1 as the next milestone.
+- Added `plan --summary` for compact risk, operation, conflict, and warning
+  counts.
+- Added `restore --preview` for no-write restore action previews.
+- Hardened restore validation so selected-path mismatches, unsafe destinations,
+  missing backups, and backup paths outside the manifest backup directory are
+  blocked before writes.
+- Added a Monster Hunter Wilds REFramework/nativePC synthetic fixture and
+  profile tests.
+- Updated the tkinter GUI restore path to preview and block unsafe restores.
+- Added `docs/guided-workflow-v1.md`.
+- Expanded tests from 44 to 54 stdlib `unittest` cases.

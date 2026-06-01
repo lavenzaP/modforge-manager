@@ -70,6 +70,7 @@ python -m modforge project init --name Demo --game-root tests\fixtures\fake_game
 python -m modforge project init --name STS2 --game-root C:\Games\STS2 --mods-dir C:\Games\STS2\mods --profile sts2-mods
 python -m modforge scan-mods
 python -m modforge plan
+python -m modforge plan --summary
 python -m modforge report --output .modforge\conflict-report.md
 python -m modforge profile disable betterui
 python -m modforge profile create boss-run --name "Boss Run" --copy-from default
@@ -80,9 +81,44 @@ python -m modforge tools set unreal_pak "C:\Tools\UnrealPak.exe {archive} -Extra
 python -m modforge doctor
 python -m modforge apply-staging --yes
 python -m modforge apply-game --yes
+python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --preview
 python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --yes
 python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --path config\settings.json --yes
 python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
+```
+
+Run the guided safe workflow on a temporary synthetic Monster Hunter Wilds /
+REFramework fixture:
+
+```powershell
+$env:PYTHONPATH = "src"
+$demo = Join-Path $env:TEMP ("modforge-safe-demo-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$game = Join-Path $demo "game"
+$mods = Join-Path $demo "mods"
+$project = Join-Path $demo "modforge.project.json"
+$report = Join-Path $demo "conflict-report.md"
+
+New-Item -ItemType Directory -Path $demo | Out-Null
+Copy-Item -Recurse tests\fixtures\mhw_reframework_game $game
+Copy-Item -Recurse tests\fixtures\mhw_reframework_mods $mods
+
+python -m modforge doctor --project-file $project
+python -m modforge project init --name "Wilds Demo" --game-root $game --mods-dir $mods --profile mhw-reframework --project-file $project
+python -m modforge scan-mods --project-file $project
+python -m modforge plan --project-file $project --summary
+python -m modforge report --project-file $project --output $report
+
+python -m modforge apply-staging --project-file $project
+python -m modforge apply-staging --project-file $project --yes
+python -m modforge apply-game --project-file $project
+python -m modforge apply-game --project-file $project --yes
+
+$manifest = Get-ChildItem (Join-Path $demo ".modforge\manifests") -Filter *.json |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 1
+
+python -m modforge restore --manifest $manifest.FullName --path nativePC/wp/swo/swo001/mod/swo001.mod3 --preview
+python -m modforge restore --manifest $manifest.FullName --path nativePC/wp/swo/swo001/mod/swo001.mod3 --yes
 ```
 
 Run the lightweight GUI:
@@ -111,6 +147,7 @@ Built-in profile ids:
 - `unreal-pak`
 - `sts2-mods`
 - `reframework`
+- `mhw-reframework`
 - `unity-bepinex`
 - `unity-melonloader`
 - `bethesda-data`
@@ -140,6 +177,8 @@ ruff format .
   under `.modforge\manifests`.
 - Restore requires `--yes` and a manifest path. Add one or more `--path`
   options to restore selected destination paths only.
+- Restore preview works without `--yes`, reports blocked actions, and does not
+  write files or update the manifest.
 - ZIP entries with unsafe paths are ignored and reported as warnings.
 - PCK/PAK extraction writes only under `.modforge\extracted` and the extracted
   files still pass through the same safe staging/game destination checks.

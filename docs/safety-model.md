@@ -9,7 +9,10 @@ ModForge Manager should make irreversible actions hard to trigger accidentally.
 - Require explicit `--yes` for game-root writes.
 - Back up overwritten game-root files before replacement.
 - Save install manifests for staging and game-root writes.
+- Preview restore actions before writing.
 - Restore game-root writes through a saved manifest.
+- Reject restore manifests that point outside the game root or outside the
+  manifest backup directory.
 - Ignore real binary payloads in Git.
 - Keep tests on synthetic fixtures.
 

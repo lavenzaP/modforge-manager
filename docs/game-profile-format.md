@@ -28,6 +28,8 @@ under the staging directory.
 - `sts2-mods`: Slay the Spire 2 style mods folder, mapping packages under
   `mods/`.
 - `reframework`: REFramework/nativePC style relative-path mapping.
+- `mhw-reframework`: Monster Hunter Wilds REFramework/nativePC workflow,
+  allowing only `reframework/**` and `nativePC/**` package roots.
 - `unity-bepinex`: Unity BepInEx workflow, mapping root DLLs to
   `BepInEx/plugins/` and common `plugins/`, `patchers/`, and `config/` folders
   under `BepInEx/`.

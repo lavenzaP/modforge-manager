@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 from modforge import __version__
-from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
-from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
+from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
 from modforge.core.game_profile import builtin_profiles
 from modforge.core.mod_package import scan_project_mods
 from modforge.core.mod_project import ModProject
@@ -60,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan = subcommands.add_parser("plan", help="Create a dry-run deployment plan")
     plan.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     plan.add_argument("--json", action="store_true", help="Print JSON output")
+    plan.add_argument("--summary", action="store_true", help="Print a compact risk summary")
     plan.set_defaults(handler=handle_plan)
 
     report = subcommands.add_parser("report", help="Write a Markdown deployment report")
@@ -142,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     restore = subcommands.add_parser("restore", help="Restore a game apply manifest")
     restore.add_argument("--manifest", required=True, type=Path)
     restore.add_argument("--path", action="append", dest="paths", help="Restore only this destination path")
+    restore.add_argument("--preview", action="store_true", help="Show restore actions without writing files")
     restore.add_argument("--yes", action="store_true", help="Confirm restore write")
     restore.add_argument("--json", action="store_true")
     restore.set_defaults(handler=handle_restore)
@@ -210,7 +212,10 @@ def handle_plan(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
     plan = build_deployment_plan(project, scan_project_mods(project))
     if args.json:
-        print(json.dumps(plan.to_dict(), indent=2))
+        payload = summarize_deployment_plan(plan) if args.summary else plan.to_dict()
+        print(json.dumps(payload, indent=2))
+    elif args.summary:
+        print(format_plan_summary(summarize_deployment_plan(plan)))
     else:
         print(f"Operations: {len(plan.operations)}")
         print(f"Conflicts: {len(plan.conflicts)}")
@@ -362,6 +367,14 @@ def handle_apply_game(args: argparse.Namespace) -> int:
 
 
 def handle_restore(args: argparse.Namespace) -> int:
+    if args.preview:
+        preview = preview_restore_manifest(args.manifest, args.paths)
+        if args.json:
+            print(json.dumps(preview.to_dict(), indent=2))
+        else:
+            print(format_restore_preview(preview.to_dict()))
+        return 0
+
     if not args.yes:
         print("Refusing to restore without --yes.")
         return 2
@@ -385,6 +398,44 @@ def handle_translation_extract(args: argparse.Namespace) -> int:
     else:
         print(f"Extracted {len(entries)} strings to {args.output}")
     return 0
+
+
+def format_plan_summary(summary: dict[str, object]) -> str:
+    return "\n".join(
+        [
+            f"Project: {summary['project_name']}",
+            f"Risk: {summary['risk_level']}",
+            f"Operations: {summary['operations']}",
+            f"Winning operations: {summary['winning_operations']}",
+            f"Skipped by conflict: {summary['skipped_by_conflict']}",
+            f"Conflicts: {summary['conflicts']}",
+            f"Warnings: {summary['warnings']}",
+        ]
+    )
+
+
+def format_restore_preview(preview: dict[str, object]) -> str:
+    records = preview.get("records", [])
+    warnings = preview.get("warnings", [])
+    lines = [
+        f"Manifest: {preview.get('manifest_id')}",
+        f"Target root: {preview.get('target_root')}",
+        f"Selected paths: {len(preview.get('selected_paths', []))}",
+        f"Can restore: {'yes' if preview.get('can_restore') else 'no'}",
+        f"Will restore backups: {preview.get('restore_from_backup', 0)}",
+        f"Will delete newly copied files: {preview.get('delete_copied_files', 0)}",
+        f"Restore actions: {len(records)}",
+    ]
+    for warning in warnings:
+        lines.append(f"WARNING: {warning}")
+    for record in records:
+        lines.append(
+            f"- {record['destination_path']}: {record['action']} "
+            f"({record['status']}, mod={record['source_mod']})"
+        )
+        if record.get("warning"):
+            lines.append(f"  WARNING: {record['warning']}")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

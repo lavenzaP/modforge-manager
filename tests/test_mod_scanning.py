@@ -36,6 +36,41 @@ class ModScanningTests(unittest.TestCase):
             self.assertEqual(packages[0].detected_type, "zip")
             self.assertEqual(packages[0].files[0].relative_path, "textures/icon.txt")
 
+    def test_scan_mhw_reframework_fixture_order_and_files(self) -> None:
+        packages = scan_mods(FIXTURES / "mhw_reframework_mods")
+
+        self.assertEqual(
+            [(package.priority, package.enabled, package.name) for package in packages],
+            [
+                (0, True, "BaseScript"),
+                (1, True, "LooseNotes"),
+                (2, True, "NativeSword"),
+                (3, True, "NativeSwordPatch"),
+            ],
+        )
+        self.assertEqual(
+            {
+                package.name: [file.relative_path for file in package.files]
+                for package in packages
+            },
+            {
+                "BaseScript": [
+                    "README.md",
+                    "reframework/autorun/base_script.lua",
+                    "reframework/data/BaseScript/settings.json",
+                ],
+                "LooseNotes": ["docs/install.txt"],
+                "NativeSword": [
+                    "nativePC/wp/swo/swo001/mod/swo001.mod3",
+                    "nativePC/wp/swo/swo001/mod/swo001.mrl3",
+                ],
+                "NativeSwordPatch": [
+                    "nativePC/wp/swo/swo001/mod/swo001.mod3",
+                    "reframework/autorun/sword_patch.lua",
+                ],
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

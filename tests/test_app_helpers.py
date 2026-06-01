@@ -45,6 +45,33 @@ class AppHelperTests(unittest.TestCase):
         self.assertIn("MISSING unreal_pak (UnrealPak)", summary)
         self.assertIn("UnrealPak is missing.", summary)
 
+    def test_restore_preview_summary_shows_safe_action_counts_and_warnings(self) -> None:
+        summary = ModForgeApp.restore_preview_summary(
+            {
+                "manifest_id": "demo",
+                "target_root": "C:/Game",
+                "can_restore": False,
+                "restore_from_backup": 1,
+                "delete_copied_files": 1,
+                "records": [
+                    {
+                        "destination_path": "config/settings.json",
+                        "action": "restore-backup",
+                    },
+                    {
+                        "destination_path": "textures/new.txt",
+                        "action": "remove-created-file",
+                    },
+                ],
+                "warnings": ["Backup is missing: C:/Backups/config/settings.json"],
+            }
+        )
+
+        self.assertIn("Can restore: no", summary)
+        self.assertIn("Will restore backups: 1", summary)
+        self.assertIn("Will delete newly copied files: 1", summary)
+        self.assertIn("WARNING: Backup is missing", summary)
+
     def test_sorted_packages_supports_table_columns(self) -> None:
         packages = [
             ModPackage("b", "Beta", Path("Beta"), True, 10, "zip", [ModFile("b.txt", 1)], ["warn"]),

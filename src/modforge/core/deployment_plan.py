@@ -45,6 +45,31 @@ class DeploymentPlan:
         }
 
 
+def summarize_deployment_plan(plan: DeploymentPlan) -> dict[str, object]:
+    winners = {conflict.destination_path: conflict.winning_mod for conflict in plan.conflicts}
+    skipped_by_conflict = [
+        operation
+        for operation in plan.operations
+        if winners.get(operation.destination_path, operation.source_mod) != operation.source_mod
+    ]
+    if plan.conflicts:
+        risk_level = "high"
+    elif plan.warnings:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+    return {
+        "project_name": plan.project_name,
+        "dry_run": plan.dry_run,
+        "operations": len(plan.operations),
+        "winning_operations": len(plan.operations) - len(skipped_by_conflict),
+        "skipped_by_conflict": len(skipped_by_conflict),
+        "conflicts": len(plan.conflicts),
+        "warnings": len(plan.warnings),
+        "risk_level": risk_level,
+    }
+
+
 def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> DeploymentPlan:
     operations: list[DeploymentOperation] = []
     conflict_entries: list[tuple[str, str, int]] = []

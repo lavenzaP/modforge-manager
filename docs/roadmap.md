@@ -28,6 +28,12 @@
 
 - Optional PySide6 UI. Done.
 
+## Phase 3
+
+- Guided Safe Workflow V1 foundation. Done.
+- Restore preview and stricter restore safety gates. Done.
+- Monster Hunter Wilds REFramework/nativePC fixture coverage. Done.
+
 ## Deferred
 
 - Nexus Mods login or downloads.

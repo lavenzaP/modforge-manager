@@ -29,7 +29,23 @@ class GameProfileTests(unittest.TestCase):
         self.assertIn("unity-melonloader", ids)
         self.assertIn("bethesda-data", ids)
         self.assertIn("cyberpunk-2077", ids)
+        self.assertIn("mhw-reframework", ids)
         self.assertEqual(builtin_profile("unreal-pak").display_name, "Unreal PAK ~mods Workflow")
+        self.assertEqual(
+            builtin_profile("mhw-reframework").display_name,
+            "Monster Hunter Wilds / REFramework NativePC Workflow",
+        )
+
+    def test_mhw_reframework_profile_maps_safe_roots(self) -> None:
+        profile = builtin_profile("mhw-reframework")
+        destinations = [
+            rule.destination_for_relative("reframework/data/BoneSystem/settings.json")
+            for rule in profile.deployment_rules
+            if rule.matches("reframework/data/BoneSystem/settings.json")
+        ]
+
+        self.assertEqual(destinations, ["reframework/data/BoneSystem/settings.json"])
+        self.assertFalse(any(rule.matches("random/file.txt") for rule in profile.deployment_rules))
 
 
 if __name__ == "__main__":
