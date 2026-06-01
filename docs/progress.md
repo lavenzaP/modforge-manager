@@ -74,3 +74,10 @@
 - GUI Restore now opens a manifest browser, shows restorable files, and supports
   restore-all or restore-selected flows.
 - Expanded tests from 22 to 24 stdlib `unittest` cases.
+
+## Expanded Game Profiles
+
+- Added built-in profiles for Unity BepInEx, Unity MelonLoader, Bethesda Data
+  folder/script extender layouts, and Cyberpunk 2077 REDmod/archive layouts.
+- Added deployment-plan tests for each new profile template.
+- Expanded tests from 24 to 28 stdlib `unittest` cases.

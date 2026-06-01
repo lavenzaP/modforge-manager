@@ -25,6 +25,10 @@ class GameProfileTests(unittest.TestCase):
         ids = [profile.id for profile in builtin_profiles()]
 
         self.assertIn("generic-folder", ids)
+        self.assertIn("unity-bepinex", ids)
+        self.assertIn("unity-melonloader", ids)
+        self.assertIn("bethesda-data", ids)
+        self.assertIn("cyberpunk-2077", ids)
         self.assertEqual(builtin_profile("unreal-pak").display_name, "Unreal PAK ~mods Workflow")
 
 

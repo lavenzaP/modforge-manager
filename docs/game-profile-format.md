@@ -28,6 +28,16 @@ under the staging directory.
 - `sts2-mods`: Slay the Spire 2 style mods folder, mapping packages under
   `mods/`.
 - `reframework`: REFramework/nativePC style relative-path mapping.
+- `unity-bepinex`: Unity BepInEx workflow, mapping root DLLs to
+  `BepInEx/plugins/` and common `plugins/`, `patchers/`, and `config/` folders
+  under `BepInEx/`.
+- `unity-melonloader`: Unity MelonLoader workflow, mapping root DLLs to `Mods/`
+  while preserving `Mods/`, `Plugins/`, `UserData/`, `UserLibs/`, and
+  `MelonLoader/` folders.
+- `bethesda-data`: Bethesda Data folder workflow for plugin, BSA, asset, and
+  script-extender style layouts, ignoring installer metadata such as `fomod/`.
+- `cyberpunk-2077`: Cyberpunk 2077 workflow for REDmod/archive layouts,
+  including root `.archive` files mapped to `archive/pc/mod/`.
 
 Rules use `source_pattern` glob matching and `destination_root`/`destination_pattern`
 for output paths. `**/` patterns also match files at the mod root.

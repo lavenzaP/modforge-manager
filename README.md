@@ -85,6 +85,10 @@ Built-in profile ids:
 - `unreal-pak`
 - `sts2-mods`
 - `reframework`
+- `unity-bepinex`
+- `unity-melonloader`
+- `bethesda-data`
+- `cyberpunk-2077`
 
 Run tests with stdlib only:
 

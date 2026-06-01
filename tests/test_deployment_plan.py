@@ -73,6 +73,95 @@ class DeploymentPlanTests(unittest.TestCase):
                 "Content/Paks/~mods/Example.pak",
             )
 
+    def test_bepinex_profile_maps_common_plugin_layouts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "PluginPack" / "plugins").mkdir(parents=True)
+            (mods / "PluginPack" / "config").mkdir(parents=True)
+            game.mkdir()
+            (mods / "PluginPack" / "Plugin.dll").write_bytes(b"dll")
+            (mods / "PluginPack" / "plugins" / "Nested.dll").write_bytes(b"dll")
+            (mods / "PluginPack" / "config" / "plugin.cfg").write_text("cfg", encoding="utf-8")
+            (mods / "PluginPack" / "manifest.json").write_text("{}", encoding="utf-8")
+            project = ModProject.create("Demo", game, mods, root / "staging", game_profile="unity-bepinex")
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+
+            self.assertEqual(
+                sorted(operation.destination_path for operation in plan.operations),
+                [
+                    "BepInEx/config/plugin.cfg",
+                    "BepInEx/plugins/Nested.dll",
+                    "BepInEx/plugins/Plugin.dll",
+                ],
+            )
+
+    def test_bethesda_profile_maps_data_folder_and_root_plugins(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "QuestPack" / "meshes").mkdir(parents=True)
+            (mods / "QuestPack" / "Data" / "scripts").mkdir(parents=True)
+            (mods / "QuestPack" / "fomod").mkdir(parents=True)
+            game.mkdir()
+            (mods / "QuestPack" / "Quest.esp").write_bytes(b"plugin")
+            (mods / "QuestPack" / "meshes" / "armor.nif").write_bytes(b"mesh")
+            (mods / "QuestPack" / "Data" / "scripts" / "quest.pex").write_bytes(b"script")
+            (mods / "QuestPack" / "fomod" / "info.xml").write_text("<fomod />", encoding="utf-8")
+            project = ModProject.create("Demo", game, mods, root / "staging", game_profile="bethesda-data")
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+
+            self.assertEqual(
+                sorted(operation.destination_path for operation in plan.operations),
+                [
+                    "Data/Quest.esp",
+                    "Data/meshes/armor.nif",
+                    "Data/scripts/quest.pex",
+                ],
+            )
+
+    def test_melonloader_profile_maps_root_dlls_to_mods(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "MelonPack" / "UserLibs").mkdir(parents=True)
+            game.mkdir()
+            (mods / "MelonPack" / "CoolMod.dll").write_bytes(b"dll")
+            (mods / "MelonPack" / "UserLibs" / "Helper.dll").write_bytes(b"dll")
+            project = ModProject.create("Demo", game, mods, root / "staging", game_profile="unity-melonloader")
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+
+            self.assertEqual(
+                sorted(operation.destination_path for operation in plan.operations),
+                [
+                    "Mods/CoolMod.dll",
+                    "UserLibs/Helper.dll",
+                ],
+            )
+
+    def test_cyberpunk_profile_maps_archives_and_existing_layouts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "NightCityPatch" / "r6" / "scripts").mkdir(parents=True)
+            game.mkdir()
+            (mods / "NightCityPatch" / "appearance.archive").write_bytes(b"archive")
+            (mods / "NightCityPatch" / "r6" / "scripts" / "patch.reds").write_text("script", encoding="utf-8")
+            project = ModProject.create("Demo", game, mods, root / "staging", game_profile="cyberpunk-2077")
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+
+            self.assertEqual(
+                sorted(operation.destination_path for operation in plan.operations),
+                [
+                    "archive/pc/mod/appearance.archive",
+                    "r6/scripts/patch.reds",
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
