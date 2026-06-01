@@ -1,1 +1,1 @@
-"""GUI package placeholder."""
+"""Optional GUI integrations."""

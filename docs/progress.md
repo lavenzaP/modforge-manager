@@ -112,3 +112,15 @@
 - Added `python -m modforge` support and checks for packaged `modforge` and
   `modforge-gui` script declarations.
 - Expanded tests from 33 to 40 stdlib `unittest` cases.
+
+## Optional PySide6 UI
+
+- Replaced the Qt placeholders with an import-gated PySide6 main window.
+- Added `modforge-gui-qt` for Qt environments while keeping `modforge-gui` on
+  the standard-library tkinter UI.
+- The Qt UI can load projects, scan mods, render plans, save reports, apply to
+  staging/game with confirmation, and show external tool checks through the same
+  core workflow functions as the CLI.
+- Added dependency-check and model-helper tests that run even when PySide6 is
+  not installed.
+- Expanded tests from 40 to 44 stdlib `unittest` cases.

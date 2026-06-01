@@ -93,7 +93,15 @@ python -m modforge.app
 ```
 
 The GUI intentionally uses the Python standard library `tkinter` for the first
-usable version, so it can run before optional PySide6 work begins.
+usable version, so it can run in a fresh Python environment.
+
+Run the optional PySide6 GUI after installing the GUI extra:
+
+```powershell
+pip install -e ".[gui]"
+modforge-gui-qt --check-dependency
+modforge-gui-qt modforge.project.json
+```
 
 Built-in profile ids:
 

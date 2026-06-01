@@ -26,7 +26,7 @@
 
 ## Phase 2
 
-- Optional PySide6 UI.
+- Optional PySide6 UI. Done.
 
 ## Deferred
 

@@ -18,6 +18,7 @@ class PackagingTests(unittest.TestCase):
 
         self.assertEqual(scripts["modforge"], "modforge.cli:main")
         self.assertEqual(scripts["modforge-gui"], "modforge.app:main")
+        self.assertEqual(scripts["modforge-gui-qt"], "modforge.gui.main_window:main")
 
     def test_python_module_entrypoint_reports_version(self) -> None:
         env = os.environ.copy()

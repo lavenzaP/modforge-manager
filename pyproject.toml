@@ -27,6 +27,7 @@ gui = [
 [project.scripts]
 modforge = "modforge.cli:main"
 modforge-gui = "modforge.app:main"
+modforge-gui-qt = "modforge.gui.main_window:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
