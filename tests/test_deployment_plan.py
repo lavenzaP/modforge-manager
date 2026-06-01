@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from zipfile import ZipFile
 
 from bootstrap import ensure_src_path
 
@@ -201,6 +202,46 @@ class DeploymentPlanTests(unittest.TestCase):
                 "risk_level": "high",
             },
         )
+
+    def test_case_insensitive_conflict_affects_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "A").mkdir(parents=True)
+            (mods / "B").mkdir(parents=True)
+            game.mkdir()
+            (mods / "A" / "Config").mkdir()
+            (mods / "B" / "config").mkdir()
+            (mods / "A" / "Config" / "Settings.json").write_text("a", encoding="utf-8")
+            (mods / "B" / "config" / "settings.JSON").write_text("b", encoding="utf-8")
+            project = ModProject.create("Demo", game, mods, root / "staging")
+
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+            summary = summarize_deployment_plan(plan)
+
+            self.assertEqual(len(plan.conflicts), 1)
+            self.assertEqual(plan.conflicts[0].winning_mod, "B")
+            self.assertEqual(summary["skipped_by_conflict"], 1)
+
+    def test_same_mod_duplicate_destination_casing_warns_and_keeps_one_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            mods.mkdir()
+            game.mkdir()
+            with ZipFile(mods / "CasePack.zip", "w") as archive:
+                archive.writestr("Config/Settings.json", "a")
+                archive.writestr("config/settings.JSON", "b")
+            project = ModProject.create("Demo", game, mods, root / "staging")
+
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+
+            self.assertEqual(len(plan.operations), 1)
+            self.assertEqual(plan.operations[0].source_path, "Config/Settings.json")
+            self.assertEqual(len(plan.conflicts), 0)
+            self.assertIn("duplicate destination variants", plan.warnings[0])
 
 
 if __name__ == "__main__":

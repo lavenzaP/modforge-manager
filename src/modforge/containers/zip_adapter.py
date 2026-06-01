@@ -60,7 +60,10 @@ def _can_open(path: Path) -> bool:
 
 
 def _safe_member_path(value: str) -> str | None:
-    normalized = value.replace("\\", "/").strip("/")
+    normalized = value.replace("\\", "/")
+    if normalized.startswith("/") or normalized.startswith("//"):
+        return None
+    normalized = normalized.strip("/")
     parts = [part for part in normalized.split("/") if part not in {"", "."}]
     if not parts or any(part == ".." for part in parts):
         return None

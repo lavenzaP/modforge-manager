@@ -50,6 +50,13 @@ doctor/audit checks, and documentation for synthetic fixtures in those families.
 It does not mean Nexus downloads, encrypted PAK support, archive repacking,
 arbitrary asset editing, a virtual filesystem, or installer generation.
 
+Current freeze docs:
+
+- [MVP status](docs/mvp-status.md)
+- [Support matrix](docs/support-matrix.md)
+- [Release checklist](docs/release-checklist.md)
+- [Changelog](CHANGELOG.md)
+
 ## Quick Start
 
 ```powershell
@@ -190,10 +197,11 @@ python -m modforge doctor --project-file modforge.project.json
 Optional dev tooling after installing extras:
 
 ```powershell
-pip install -e ".[dev]"
+.\scripts\dev_setup.ps1
 pytest
-ruff check .
-ruff format .
+python -m ruff check .
+python -m ruff format --check .
+.\scripts\lint.ps1
 ```
 
 ## Safety Defaults

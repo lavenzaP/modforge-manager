@@ -32,6 +32,8 @@ class ContainerDetectionTests(unittest.TestCase):
             with ZipFile(archive, "w") as zip_file:
                 zip_file.writestr("config/settings.json", "{}")
                 zip_file.writestr("../unsafe.txt", "bad")
+                zip_file.writestr("/absolute.txt", "bad")
+                zip_file.writestr("C:/absolute.txt", "bad")
 
             info = detect_container(archive)
             files, warnings = list_files(archive)
@@ -39,7 +41,7 @@ class ContainerDetectionTests(unittest.TestCase):
             self.assertEqual(info.container_type, "zip")
             self.assertTrue(info.supported)
             self.assertEqual(files, [("config/settings.json", 2)])
-            self.assertEqual(len(warnings), 1)
+            self.assertEqual(len(warnings), 3)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,10 @@
 
 ## Goal
 
-Milestone 4 turns ModForge Manager into an MVP release candidate: a local,
+Milestone 4 turned ModForge Manager into an MVP release candidate: a local,
 Windows-first mod manager that can safely scan, plan, apply, inspect, and restore
 supported mod workflows through synthetic fixtures and repeatable smoke checks.
+Milestone 5 freezes large feature work and focuses on release readiness.
 
 ## Certified Core Mod Families
 
@@ -39,6 +40,7 @@ These are intentionally outside the MVP RC scope:
 - `python -m modforge doctor --project-file modforge.project.json`
 - `python -m modforge plan --project-file modforge.project.json --summary --json`
 - PowerShell smoke scripts under `scripts/`
+- Optional lint gate through `scripts/lint.ps1`
 
 ## Acceptance Criteria
 
@@ -51,3 +53,4 @@ These are intentionally outside the MVP RC scope:
 - The tkinter GUI exposes project health and manifest/restore state.
 - REFramework, Unreal, and Godot/STS2 family fixtures pass end-to-end tests.
 - README and docs describe supported scope and limitations.
+- Release checklist, support matrix, MVP status, and changelog are present.

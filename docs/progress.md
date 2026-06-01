@@ -158,3 +158,19 @@
 - Added Windows PowerShell smoke scripts under `scripts/`.
 - Added MVP RC, core mod family, project portability, and Windows smoke docs.
 - Expanded tests from 54 to 66 stdlib `unittest` cases.
+
+## MVP Freeze And Release Readiness
+
+- Re-consulted ChatGPT through Whale/CS WebLatch after the MVP RC hardening
+  commit and agreed that large MVP features are complete.
+- Added release freeze docs: changelog, MVP status, support matrix, and release
+  checklist.
+- Hardened Windows smoke scripts so native command failures are checked
+  explicitly and dev setup installs the `dev` extra.
+- Added optional `scripts/lint.ps1` for `ruff check` and `ruff format --check`.
+- Hardened deployment safety for linked package paths, linked source/destination
+  components, unsafe ZIP absolute paths, and Windows case-insensitive conflicts.
+- Fixed top-level Unreal sidecar archive deployment so `.pak/.ucas/.utoc` files
+  with the same stem copy from their own source archive.
+- Expanded restore selection for Unreal sidecar groups.
+- Expanded tests from 66 to 76 stdlib `unittest` cases.

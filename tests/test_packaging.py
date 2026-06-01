@@ -43,6 +43,7 @@ class PackagingTests(unittest.TestCase):
     def test_windows_smoke_scripts_exist(self) -> None:
         for name in [
             "dev_setup.ps1",
+            "lint.ps1",
             "run_tests.ps1",
             "smoke_cli.ps1",
             "smoke_gui_import.ps1",

@@ -10,9 +10,9 @@ from bootstrap import ensure_src_path
 ensure_src_path()
 
 from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
-from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.deployment_plan import DeploymentOperation, DeploymentPlan, build_deployment_plan
 from modforge.core.manifest import InstallManifest, InstallRecord
-from modforge.core.mod_package import scan_mods
+from modforge.core.mod_package import ModFile, ModPackage, scan_mods
 from modforge.core.mod_project import ModProject
 
 
@@ -207,7 +207,7 @@ class DeployerTests(unittest.TestCase):
             preview = preview_restore_manifest(manifest_path)
 
             self.assertEqual(preview.records[0].action, "blocked")
-            self.assertIn("Refusing to write outside staging directory", preview.warnings[0])
+            self.assertIn("Refusing unsafe relative path", preview.warnings[0])
             self.assertFalse(preview.to_dict()["can_restore"])
             with self.assertRaises(ValueError):
                 restore_manifest(manifest_path)
@@ -246,6 +246,165 @@ class DeployerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 restore_manifest(manifest_path)
             self.assertEqual((game / "settings.txt").read_text(encoding="utf-8"), "patched")
+
+    def test_loose_folder_source_paths_must_stay_inside_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            staging = root / "staging"
+            package_root = root / "mods" / "Unsafe"
+            outside = root / "outside.txt"
+            game.mkdir()
+            package_root.mkdir(parents=True)
+            outside.write_text("outside", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, root / "mods", staging)
+            package = ModPackage(
+                id="unsafe",
+                name="Unsafe",
+                path=package_root,
+                enabled=True,
+                priority=0,
+                detected_type="loose_folder",
+                files=[ModFile("../outside.txt", outside.stat().st_size)],
+            )
+            plan = DeploymentPlan(
+                project_name="Demo",
+                operations=[
+                    DeploymentOperation(
+                        source_mod="Unsafe",
+                        source_path="../outside.txt",
+                        destination_path="outside.txt",
+                    )
+                ],
+            )
+
+            with self.assertRaises(ValueError):
+                apply_to_staging(project, plan, [package])
+            self.assertFalse((staging / "outside.txt").exists())
+
+    def test_staging_preflight_blocks_partial_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            staging = root / "staging"
+            package_root = root / "mods" / "Patch"
+            game.mkdir()
+            package_root.mkdir(parents=True)
+            (package_root / "safe.txt").write_text("safe", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, root / "mods", staging)
+            package = ModPackage(
+                id="patch",
+                name="Patch",
+                path=package_root,
+                enabled=True,
+                priority=0,
+                detected_type="loose_folder",
+                files=[
+                    ModFile("safe.txt", 4),
+                    ModFile("../missing.txt", 0),
+                ],
+            )
+            plan = DeploymentPlan(
+                project_name="Demo",
+                operations=[
+                    DeploymentOperation("Patch", "safe.txt", "safe.txt"),
+                    DeploymentOperation("Patch", "../missing.txt", "missing.txt"),
+                ],
+            )
+
+            with self.assertRaises(ValueError):
+                apply_to_staging(project, plan, [package])
+            self.assertFalse((staging / "safe.txt").exists())
+
+    def test_selected_unreal_sidecar_restore_expands_to_atomic_group(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            mod_root = mods / "TextureTriplet"
+            target_root = game / "Content" / "Paks" / "~mods"
+            mod_root.mkdir(parents=True)
+            target_root.mkdir(parents=True)
+            for suffix in [".pak", ".ucas", ".utoc"]:
+                (mod_root / f"TextureTriplet_P{suffix}").write_text(f"patched {suffix}", encoding="utf-8")
+                (target_root / f"TextureTriplet_P{suffix}").write_text(f"original {suffix}", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging, game_profile="unreal-pak")
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_game(project, plan, packages)
+            manifest_path = staging.parent / "manifests" / f"{manifest.manifest_id}.json"
+
+            selected = "Content/Paks/~mods/TextureTriplet_P.pak"
+            preview = preview_restore_manifest(manifest_path, [selected])
+
+            self.assertEqual(
+                sorted(preview.selected_paths),
+                [
+                    "Content/Paks/~mods/TextureTriplet_P.pak",
+                    "Content/Paks/~mods/TextureTriplet_P.ucas",
+                    "Content/Paks/~mods/TextureTriplet_P.utoc",
+                ],
+            )
+
+            restore_manifest(manifest_path, [selected])
+
+            for suffix in [".pak", ".ucas", ".utoc"]:
+                self.assertEqual(
+                    (target_root / f"TextureTriplet_P{suffix}").read_text(encoding="utf-8"),
+                    f"original {suffix}",
+                )
+
+    def test_top_level_unreal_sidecars_copy_from_their_own_archive_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            mods.mkdir()
+            game.mkdir()
+            for suffix in [".pak", ".ucas", ".utoc"]:
+                (mods / f"TextureTriplet_P{suffix}").write_text(f"{suffix}-bytes", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging, game_profile="unreal-pak")
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+
+            apply_to_staging(project, plan, packages)
+
+            target_root = staging / "Content" / "Paks" / "~mods"
+            for suffix in [".pak", ".ucas", ".utoc"]:
+                self.assertEqual(
+                    (target_root / f"TextureTriplet_P{suffix}").read_text(encoding="utf-8"),
+                    f"{suffix}-bytes",
+                )
+
+    def test_apply_rejects_destination_symlink_before_touching_target(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            (mods / "Patch").mkdir(parents=True)
+            game.mkdir()
+            protected = game / "protected.txt"
+            protected.write_text("original", encoding="utf-8")
+            try:
+                (game / "linked.txt").symlink_to(protected)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+            (mods / "Patch" / "linked.txt").write_text("patched", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+
+            with self.assertRaises(ValueError):
+                apply_to_game(project, plan, packages)
+            self.assertEqual(protected.read_text(encoding="utf-8"), "original")
 
 
 if __name__ == "__main__":

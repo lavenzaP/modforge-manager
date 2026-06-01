@@ -13,6 +13,10 @@ ModForge Manager should make irreversible actions hard to trigger accidentally.
 - Restore game-root writes through a saved manifest.
 - Reject restore manifests that point outside the game root or outside the
   manifest backup directory.
+- Reject linked package paths and linked source/destination path components.
+- Detect destination conflicts with Windows case-insensitive path keys.
+- Treat Unreal `.pak/.ucas/.utoc` restore selections as sidecar groups when
+  manifest records share the same destination base.
 - Ignore real binary payloads in Git.
 - Keep tests on synthetic fixtures.
 

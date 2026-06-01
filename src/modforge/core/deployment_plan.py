@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 
-from modforge.core.conflict_detector import Conflict, detect_conflicts
+from modforge.core.conflict_detector import Conflict, conflict_path_key, detect_conflicts
 from modforge.core.game_profile import DeploymentRule
 from modforge.core.mod_package import ModPackage
 from modforge.core.mod_project import ModProject
@@ -17,6 +17,8 @@ class DeploymentOperation:
     source_path: str
     destination_path: str
     action: str = "copy"
+    source_package_path: str = ""
+    source_priority: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -24,6 +26,8 @@ class DeploymentOperation:
             "source_path": self.source_path,
             "destination_path": self.destination_path,
             "action": self.action,
+            "source_package_path": self.source_package_path,
+            "source_priority": self.source_priority,
         }
 
 
@@ -46,11 +50,11 @@ class DeploymentPlan:
 
 
 def summarize_deployment_plan(plan: DeploymentPlan) -> dict[str, object]:
-    winners = {conflict.destination_path: conflict.winning_mod for conflict in plan.conflicts}
+    winners = {conflict_path_key(conflict.destination_path): conflict.winning_mod for conflict in plan.conflicts}
     skipped_by_conflict = [
         operation
         for operation in plan.operations
-        if winners.get(operation.destination_path, operation.source_mod) != operation.source_mod
+        if winners.get(conflict_path_key(operation.destination_path), operation.source_mod) != operation.source_mod
     ]
     if plan.conflicts:
         risk_level = "high"
@@ -72,7 +76,6 @@ def summarize_deployment_plan(plan: DeploymentPlan) -> dict[str, object]:
 
 def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> DeploymentPlan:
     operations: list[DeploymentOperation] = []
-    conflict_entries: list[tuple[str, str, int]] = []
     warnings: list[str] = []
 
     for package in packages:
@@ -98,9 +101,16 @@ def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> De
                     source_mod=package.name,
                     source_path=mod_file.relative_path,
                     destination_path=destination,
+                    source_package_path=str(package.path),
+                    source_priority=package.priority,
                 )
             )
-            conflict_entries.append((destination, package.name, package.priority))
+
+    operations = _drop_same_mod_destination_duplicates(operations, warnings)
+    conflict_entries = [
+        (operation.destination_path, operation.source_mod, operation.source_priority)
+        for operation in operations
+    ]
 
     return DeploymentPlan(
         project_name=project.name,
@@ -119,3 +129,40 @@ def _rule_for(relative_path: str, rules: list[DeploymentRule]) -> DeploymentRule
         if rule.matches(relative_path):
             return rule
     return None
+
+
+def _drop_same_mod_destination_duplicates(
+    operations: list[DeploymentOperation],
+    warnings: list[str],
+) -> list[DeploymentOperation]:
+    grouped: dict[tuple[str, str], list[DeploymentOperation]] = {}
+    for operation in operations:
+        source_key = operation.source_package_path or operation.source_mod
+        grouped.setdefault((source_key, conflict_path_key(operation.destination_path)), []).append(operation)
+
+    kept: list[DeploymentOperation] = []
+    skipped: set[int] = set()
+    for group in grouped.values():
+        if len(group) <= 1:
+            continue
+        ordered = sorted(
+            group,
+            key=lambda item: (
+                item.destination_path.casefold(),
+                item.destination_path,
+                item.source_path.casefold(),
+                item.source_path,
+            ),
+        )
+        winner = ordered[0]
+        skipped.update(id(item) for item in ordered[1:])
+        skipped_sources = ", ".join(item.source_path for item in ordered[1:])
+        warnings.append(
+            f"{winner.source_mod}: duplicate destination variants resolve to the same Windows path; "
+            f"keeping {winner.source_path}, skipping {skipped_sources}"
+        )
+
+    for operation in operations:
+        if id(operation) not in skipped:
+            kept.append(operation)
+    return kept

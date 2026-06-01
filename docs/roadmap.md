@@ -44,6 +44,16 @@
 - Godot/Slay the Spire 2 PCK certification. Done.
 - Windows smoke scripts. Done.
 
+## Phase 5
+
+- MVP freeze status document. Done.
+- Support matrix. Done.
+- Changelog. Done.
+- Release checklist and tag readiness notes. Done.
+- Windows smoke script exit-code hardening. Done.
+- Safety edge tests for linked paths, ZIP absolute paths, Windows path casing,
+  and Unreal sidecar restore selection. Done.
+
 ## Deferred
 
 - Nexus Mods login or downloads.

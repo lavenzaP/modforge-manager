@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from modforge.containers import external_archive, zip_adapter
 from modforge.containers.detector import detect_container
-from modforge.core.paths import as_posix_relative, iter_files, normalize_path
+from modforge.core.paths import as_posix_relative, is_link_or_junction, iter_files, normalize_path
 from modforge.core.user_profile import UserProfile
 
 if TYPE_CHECKING:
@@ -72,6 +72,20 @@ def scan_mods(
     packages: list[ModPackage] = []
     for index, item in enumerate(sorted(root.iterdir(), key=lambda path: path.name.lower())):
         if item.name.startswith("."):
+            continue
+        if is_link_or_junction(item):
+            package_id = item.stem.lower().replace(" ", "-")
+            packages.append(
+                ModPackage(
+                    id=package_id,
+                    name=item.stem if item.is_file() else item.name,
+                    path=item,
+                    enabled=user_profile.is_enabled(package_id) if user_profile else True,
+                    priority=user_profile.priority_for(package_id, index) if user_profile else index,
+                    detected_type="linked_path",
+                    warnings=[f"Skipped linked package path: {item.name}"],
+                )
+            )
             continue
         detected = detect_container(item)
         warnings = list(detected.warnings)

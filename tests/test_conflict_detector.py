@@ -22,6 +22,19 @@ class ConflictDetectorTests(unittest.TestCase):
         self.assertEqual(len(conflicts), 1)
         self.assertEqual(conflicts[0].winning_mod, "Overhaul")
 
+    def test_windows_case_insensitive_destination_conflicts(self) -> None:
+        conflicts = detect_conflicts(
+            [
+                ("Content/Paks/~mods/CoolPak_P.pak", "CoolPak", 0),
+                ("content/paks/~mods/coolpak_p.PAK", "CoolPakAlt", 1),
+            ]
+        )
+
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0].destination_path, "Content/Paks/~mods/CoolPak_P.pak")
+        self.assertEqual(conflicts[0].mods, ["CoolPak", "CoolPakAlt"])
+        self.assertEqual(conflicts[0].winning_mod, "CoolPakAlt")
+
 
 if __name__ == "__main__":
     unittest.main()

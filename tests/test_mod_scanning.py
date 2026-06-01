@@ -36,6 +36,41 @@ class ModScanningTests(unittest.TestCase):
             self.assertEqual(packages[0].detected_type, "zip")
             self.assertEqual(packages[0].files[0].relative_path, "textures/icon.txt")
 
+    def test_scan_loose_mod_skips_symlinked_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            mod_root = mods / "LinkMod"
+            outside = root / "outside.txt"
+            mod_root.mkdir(parents=True)
+            outside.write_text("outside", encoding="utf-8")
+            try:
+                (mod_root / "linked.txt").symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            packages = scan_mods(mods)
+
+            self.assertEqual(packages[0].files, [])
+
+    def test_scan_top_level_symlink_package_is_warning_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            outside = root / "outside.pak"
+            mods.mkdir()
+            outside.write_text("outside", encoding="utf-8")
+            try:
+                (mods / "LinkedPak.pak").symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(f"symlink creation is unavailable: {exc}")
+
+            packages = scan_mods(mods)
+
+            self.assertEqual(packages[0].detected_type, "linked_path")
+            self.assertEqual(packages[0].files, [])
+            self.assertIn("Skipped linked package path: LinkedPak.pak", packages[0].warnings)
+
     def test_scan_mhw_reframework_fixture_order_and_files(self) -> None:
         packages = scan_mods(FIXTURES / "mhw_reframework_mods")
 

@@ -6,14 +6,16 @@ import shutil
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 from modforge.containers import zip_adapter
-from modforge.core.deployment_plan import DeploymentPlan
+from modforge.core.conflict_detector import conflict_path_key
+from modforge.core.deployment_plan import DeploymentOperation, DeploymentPlan
 from modforge.core.manifest import InstallManifest, InstallRecord
 from modforge.core.mod_package import ModPackage
 from modforge.core.mod_project import ModProject
+from modforge.core.paths import has_link_component, is_link_or_junction
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +68,15 @@ class _RestoreAction:
     warning: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedOperation:
+    operation: DeploymentOperation
+    package: ModPackage
+    destination: Path
+    backup: Path | None = None
+    backup_path: str = ""
+
+
 def apply_to_staging(project: ModProject, plan: DeploymentPlan, packages: list[ModPackage]) -> InstallManifest:
     """Apply the winning dry-run operations to the project's staging directory.
 
@@ -75,8 +86,8 @@ def apply_to_staging(project: ModProject, plan: DeploymentPlan, packages: list[M
 
     staging_dir = project.staging_dir.resolve(strict=False)
     staging_dir.mkdir(parents=True, exist_ok=True)
-    package_by_name = {package.name: package for package in packages}
-    winners = {conflict.destination_path: conflict.winning_mod for conflict in plan.conflicts}
+    winners = _conflict_winners(plan)
+    prepared = _prepare_operations(plan, packages, staging_dir, winners)
     manifest = InstallManifest(
         manifest_id=str(uuid4()),
         target="staging",
@@ -84,7 +95,7 @@ def apply_to_staging(project: ModProject, plan: DeploymentPlan, packages: list[M
     )
 
     for operation in plan.operations:
-        if winners.get(operation.destination_path, operation.source_mod) != operation.source_mod:
+        if _is_skipped_by_conflict(operation, winners):
             manifest.skipped_files.append(operation.destination_path)
             manifest.records.append(
                 InstallRecord(
@@ -96,8 +107,9 @@ def apply_to_staging(project: ModProject, plan: DeploymentPlan, packages: list[M
             )
             continue
 
-        package = package_by_name[operation.source_mod]
-        destination = _safe_destination(staging_dir, operation.destination_path)
+        prepared_operation = prepared[id(operation)]
+        package = prepared_operation.package
+        destination = prepared_operation.destination
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
             manifest.overwritten_files.append(operation.destination_path)
@@ -131,8 +143,8 @@ def apply_to_game(project: ModProject, plan: DeploymentPlan, packages: list[ModP
     workspace_dir = project.staging_dir.parent.resolve(strict=False)
     backup_dir = workspace_dir / "backups" / manifest_id
     manifest_path = workspace_dir / "manifests" / f"{manifest_id}.json"
-    package_by_name = {package.name: package for package in packages}
-    winners = {conflict.destination_path: conflict.winning_mod for conflict in plan.conflicts}
+    winners = _conflict_winners(plan)
+    prepared = _prepare_operations(plan, packages, game_root, winners, backup_dir)
     manifest = InstallManifest(
         manifest_id=manifest_id,
         target="game",
@@ -141,7 +153,7 @@ def apply_to_game(project: ModProject, plan: DeploymentPlan, packages: list[ModP
     )
 
     for operation in plan.operations:
-        if winners.get(operation.destination_path, operation.source_mod) != operation.source_mod:
+        if _is_skipped_by_conflict(operation, winners):
             manifest.skipped_files.append(operation.destination_path)
             manifest.records.append(
                 InstallRecord(
@@ -153,14 +165,16 @@ def apply_to_game(project: ModProject, plan: DeploymentPlan, packages: list[ModP
             )
             continue
 
-        package = package_by_name[operation.source_mod]
-        destination = _safe_destination(game_root, operation.destination_path)
-        backup_path = ""
+        prepared_operation = prepared[id(operation)]
+        package = prepared_operation.package
+        destination = prepared_operation.destination
+        backup_path = prepared_operation.backup_path
         if destination.exists():
-            backup = _safe_destination(backup_dir, operation.destination_path)
+            backup = prepared_operation.backup
+            if backup is None:
+                raise FileNotFoundError(f"Backup path was not prepared: {operation.destination_path}")
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(destination, backup)
-            backup_path = str(backup)
             manifest.backups.append(operation.destination_path)
             manifest.overwritten_files.append(operation.destination_path)
             status = "overwritten"
@@ -191,7 +205,7 @@ def preview_restore_manifest(manifest_path: Path, selected_paths: Iterable[str] 
     if manifest.target != "game":
         raise ValueError(f"Only game manifests can be restored, got: {manifest.target}")
     target_root = Path(manifest.target_root).resolve(strict=False)
-    selected = _normalize_selected_paths(selected_paths)
+    selected = _expand_atomic_sidecar_selection(manifest, _normalize_selected_paths(selected_paths))
     restorable_records, unmatched = _matching_restore_records(manifest, selected)
 
     warnings: list[str] = []
@@ -239,7 +253,7 @@ def restore_manifest(manifest_path: Path, selected_paths: Iterable[str] | None =
     if not target_root.exists() or not target_root.is_dir():
         raise FileNotFoundError(f"Manifest target root is unavailable: {target_root}")
 
-    selected = _normalize_selected_paths(selected_paths)
+    selected = _expand_atomic_sidecar_selection(manifest, _normalize_selected_paths(selected_paths))
     restorable_records, unmatched = _matching_restore_records(manifest, selected)
     if selected == set():
         raise ValueError("No restore paths were selected.")
@@ -268,18 +282,23 @@ def restore_manifest(manifest_path: Path, selected_paths: Iterable[str] | None =
     return manifest
 
 
-def _safe_destination(staging_dir: Path, destination_path: str) -> Path:
-    destination = (staging_dir / destination_path).resolve(strict=False)
+def _safe_destination(target_root: Path, destination_path: str) -> Path:
+    root = target_root.resolve(strict=False)
+    parts = _safe_relative_parts(destination_path)
+    destination = root.joinpath(*parts)
+    if has_link_component(destination, root):
+        raise ValueError(f"Refusing to write through linked path component: {destination_path}")
+    resolved = destination.resolve(strict=False)
     try:
-        destination.relative_to(staging_dir)
+        resolved.relative_to(root)
     except ValueError as exc:
-        raise ValueError(f"Refusing to write outside staging directory: {destination_path}") from exc
+        raise ValueError(f"Refusing to write outside target root: {destination_path}") from exc
     return destination
 
 
 def _write_operation_source(package: ModPackage, relative_path: str, destination: Path) -> None:
     if package.detected_type == "loose_folder":
-        shutil.copy2(package.path / relative_path, destination)
+        shutil.copy2(_safe_source(package.path, relative_path), destination)
         return
     if package.detected_type in {"godot_pck", "unreal_pak"} and package.extracted_path is None:
         shutil.copy2(package.path, destination)
@@ -296,6 +315,74 @@ def _write_operation_source(package: ModPackage, relative_path: str, destination
     raise ValueError(f"Package type cannot be staged yet: {package.detected_type}")
 
 
+def _conflict_winners(plan: DeploymentPlan) -> dict[str, str]:
+    return {conflict_path_key(conflict.destination_path): conflict.winning_mod for conflict in plan.conflicts}
+
+
+def _is_skipped_by_conflict(operation: DeploymentOperation, winners: dict[str, str]) -> bool:
+    return winners.get(conflict_path_key(operation.destination_path), operation.source_mod) != operation.source_mod
+
+
+def _prepare_operations(
+    plan: DeploymentPlan,
+    packages: list[ModPackage],
+    target_root: Path,
+    winners: dict[str, str],
+    backup_root: Path | None = None,
+) -> dict[int, _PreparedOperation]:
+    prepared: dict[int, _PreparedOperation] = {}
+    for operation in plan.operations:
+        if _is_skipped_by_conflict(operation, winners):
+            continue
+        package = _package_for_operation(packages, operation)
+        _validate_operation_source(package, operation.source_path)
+        destination = _safe_destination(target_root, operation.destination_path)
+        backup: Path | None = None
+        backup_path = ""
+        if backup_root is not None and destination.exists():
+            backup = _safe_destination(backup_root, operation.destination_path)
+            backup_path = str(backup)
+        prepared[id(operation)] = _PreparedOperation(
+            operation=operation,
+            package=package,
+            destination=destination,
+            backup=backup,
+            backup_path=backup_path,
+        )
+    return prepared
+
+
+def _package_for_operation(packages: list[ModPackage], operation: DeploymentOperation) -> ModPackage:
+    if operation.source_package_path:
+        for package in packages:
+            if str(package.path) == operation.source_package_path:
+                return package
+        raise KeyError(f"Missing source package path: {operation.source_package_path}")
+
+    matches = [package for package in packages if package.name == operation.source_mod]
+    if len(matches) == 1:
+        return matches[0]
+    raise KeyError(f"Cannot uniquely resolve source package: {operation.source_mod}")
+
+
+def _validate_operation_source(package: ModPackage, relative_path: str) -> None:
+    if package.detected_type == "loose_folder":
+        _safe_source(package.path, relative_path)
+        return
+    if package.detected_type in {"godot_pck", "unreal_pak"} and package.extracted_path is None:
+        if is_link_or_junction(package.path) or not package.path.exists():
+            raise ValueError(f"Refusing to deploy linked or missing archive package: {package.path}")
+        return
+    if package.detected_type == "zip":
+        return
+    if package.detected_type in {"godot_pck", "unreal_pak"}:
+        if package.extracted_path is None:
+            raise ValueError(f"Package was not extracted before deployment: {package.name}")
+        _safe_source(package.extracted_path, relative_path)
+        return
+    raise ValueError(f"Package type cannot be staged yet: {package.detected_type}")
+
+
 def _normalize_manifest_path(path: str) -> str:
     normalized = path.replace("\\", "/")
     while normalized.startswith("./"):
@@ -307,6 +394,41 @@ def _normalize_selected_paths(selected_paths: Iterable[str] | None) -> set[str] 
     if selected_paths is None:
         return None
     return {_normalize_manifest_path(path) for path in selected_paths}
+
+
+_UNREAL_SIDECAR_SUFFIXES = {".pak", ".ucas", ".utoc"}
+
+
+def _expand_atomic_sidecar_selection(
+    manifest: InstallManifest,
+    selected: set[str] | None,
+) -> set[str] | None:
+    if selected is None or not selected:
+        return selected
+
+    groups: dict[str, set[str]] = {}
+    for record in manifest.records:
+        if record.status == "skipped":
+            continue
+        key = _unreal_sidecar_key(record.destination_path)
+        if key is None:
+            continue
+        groups.setdefault(key, set()).add(_normalize_manifest_path(record.destination_path))
+
+    expanded = set(selected)
+    selected_keys = {_unreal_sidecar_key(path) for path in selected}
+    selected_keys.discard(None)
+    for key in selected_keys:
+        expanded.update(groups.get(key, set()))
+    return expanded
+
+
+def _unreal_sidecar_key(destination_path: str) -> str | None:
+    normalized = _normalize_manifest_path(destination_path)
+    path = PurePosixPath(normalized)
+    if path.suffix.lower() not in _UNREAL_SIDECAR_SUFFIXES:
+        return None
+    return str(path.with_suffix("")).casefold()
 
 
 def _matching_restore_records(
@@ -415,10 +537,27 @@ def _blocked_or_raise(
 
 
 def _safe_source(root: Path, relative_path: str) -> Path:
+    if is_link_or_junction(root):
+        raise ValueError(f"Refusing to read through linked package root: {root}")
     source_root = root.resolve(strict=False)
-    source = (source_root / relative_path).resolve(strict=False)
+    source = source_root.joinpath(*_safe_relative_parts(relative_path))
+    if has_link_component(source, source_root):
+        raise ValueError(f"Refusing to read through linked package path: {relative_path}")
+    resolved = source.resolve(strict=False)
     try:
-        source.relative_to(source_root)
+        resolved.relative_to(source_root)
     except ValueError as exc:
         raise ValueError(f"Refusing to read outside extracted package: {relative_path}") from exc
     return source
+
+
+def _safe_relative_parts(path: str) -> tuple[str, ...]:
+    normalized = path.replace("\\", "/")
+    if normalized.startswith("/") or normalized.startswith("//"):
+        raise ValueError(f"Refusing absolute path: {path}")
+    parts = tuple(part for part in normalized.split("/") if part not in {"", "."})
+    if not parts or any(part == ".." for part in parts):
+        raise ValueError(f"Refusing unsafe relative path: {path}")
+    if len(parts[0]) >= 2 and parts[0][1] == ":":
+        raise ValueError(f"Refusing drive-prefixed path: {path}")
+    return parts
