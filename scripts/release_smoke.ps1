@@ -45,4 +45,8 @@ if ($IncludeWinUI) {
     if ($LASTEXITCODE -ne 0) {
         throw "smoke_winui_shell failed with exit code $LASTEXITCODE"
     }
+    .\scripts\smoke_winui_bridge_real.ps1
+    if ($LASTEXITCODE -ne 0) {
+        throw "smoke_winui_bridge_real failed with exit code $LASTEXITCODE"
+    }
 }

@@ -8,7 +8,8 @@ apply, game apply, manifest inspection, restore preview, restore, and docs.
 | --- | --- | --- | --- | --- | --- |
 | REFramework/nativePC | `reframework`, `mhw-reframework` | loose folders, ZIP | No | loose `reframework/` and `nativePC/` layouts | `tests/fixtures/mod_families/reframework_wilds` |
 | Unreal `~mods` | `unreal-pak` | loose folders, ZIP, `.pak`, `.ucas`, `.utoc` | Optional `unreal_pak` extraction | archive-as-is deployment to `Content/Paks/~mods` | `tests/fixtures/mod_families/unreal_pak` |
-| Godot/STS2 mods | `godot-pck`, `sts2-mods` | loose folders, ZIP, `.pck` | Optional `godot_pck_tool` extraction | archive-as-is deployment to `mods/` | `tests/fixtures/mod_families/godot_sts2` |
+| Godot/STS2 mods | `godot-pck`, `sts2-mods` | loose folders, ZIP, `.pck` | Optional `godot_pck_tool` extraction | standalone `.pck` deployment to `mods/`; loose folders preserved under `mods/<package_name>/` | `tests/fixtures/mod_families/godot_sts2` |
+| Stellar Blade / CNS | `stellar-blade.experimental` | loose folders, ZIP, `.pak`, `.ucas`, `.utoc` | Optional `unreal_pak` extraction | experimental JSON profile; `~mods`, `SB/**`, and UE4SS/runtime mapping preview | generated temp fixtures |
 | Generic loose mods | `generic-folder` | loose folders, ZIP, optional PCK/PAK | Optional for PCK/PAK | local scan/plan/apply/restore | `tests/fixtures/fake_mods` |
 | Additional templates | `mo2-mod`, Unity, Bethesda, Cyberpunk | loose folders, ZIP | No | deployment rule mapping tests | generated temp fixtures |
 
@@ -23,6 +24,8 @@ apply, game apply, manifest inspection, restore preview, restore, and docs.
   ignored with warnings.
 - Unreal sidecar restore selection expands `.pak/.ucas/.utoc` records that share
   the same destination base.
+- Custom game profiles can be validated and previewed before use, and unsafe
+  absolute/traversal destinations are rejected.
 
 ## Explicitly Not Supported
 

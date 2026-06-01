@@ -245,3 +245,62 @@
 - Added WinUI publish-file checks for `.exe`, `.dll`, `.pri`, and `.xbf`
   resources.
 - Added `release_smoke.ps1 -IncludeWinUI` for the primary candidate shell.
+
+## WinUI 3 Real Safe Bridge v1
+
+- Discussed the next milestone with ChatGPT through Whale/CS WebLatch and
+  selected a subprocess bridge to the existing Python CLI/core.
+- Added `project show --json` so the Windows shell can load project metadata
+  without parsing human-readable CLI output.
+- Added a WinUI `PythonCoreService` that starts Python only on user actions and
+  calls `project show`, `project init`, `scan-mods`, `plan`, and
+  `apply-staging` through JSON/stdout contracts.
+- Wired WinUI Open Project, Guided Setup folder selection/project creation,
+  Scan Mods, Plan, manual Plan review, and Apply to staging to real Python core
+  operations.
+- Removed sample mod/conflict/warning data from the WinUI runtime path; Mods,
+  Plan, KPIs, project summary, and staging manifest rows now use real command
+  results.
+- Fixed Guided Setup scan/replan row actions so they stay consistent with the
+  top-bar actions and support rescanning/rebuilding plans.
+- Reworked Plan conflicts from truncated table rows into detail cards with full
+  destination paths, participating mods, source paths, kept/overwritten labels,
+  and priority-based resolution buttons.
+- Wired conflict resolution buttons to the existing `profile set-priority`
+  command, then rescan/replan and relock staging review after priority changes.
+- Wired selected-mod Enable/Disable actions to the existing profile state,
+  then refresh scan results and relock/rebuild the dry-run plan when needed.
+- Fixed `sts2-mods` loose-folder deployment so files preserve their mod folder
+  under `mods/<package_name>/`; separate `mod_manifest.json` files no longer
+  collide at `mods/mod_manifest.json`, and `.pck` files inside loose folders
+  stay inside that folder.
+- Kept game apply and destructive restore unwired and locked for this milestone.
+- Added `scripts/smoke_winui_bridge_real.ps1` and included it in
+  `release_smoke.ps1 -IncludeWinUI` to verify the project-load, scan, dry-run
+  plan, priority reorder, and staging contract on fixture data without changing
+  game files.
+
+## Data-Driven Game Profiles v1
+
+- Extended `GameProfile` with schema version, root aliases, rule ids, multi
+  source patterns, sidecar groups, protected paths, validation samples, and
+  safety tiers while preserving existing built-in profile ids.
+- Added JSON profile loading plus custom profile import/export support.
+- Added `profiles validate`, `profiles preview-map`, `profiles import`, and
+  `profiles export` CLI commands.
+- Added `stellar-blade.experimental`, a JSON profile for Stellar Blade/CNS
+  archive sidecars, existing `SB/**` merge packages, and high-risk UE4SS/runtime
+  file destinations.
+- Updated deployment planning to record matched rule ids/safety tiers and warn
+  on high-risk or protected destinations before any apply step.
+- Added WinUI Guided Setup selection for the experimental Stellar Blade/CNS
+  profile.
+
+## Profile Picker UX
+
+- Replaced the WinUI Guided Setup hard-coded mod family button row with a game
+  profile picker backed by the Python `profiles --json` catalog.
+- Kept a small built-in fallback catalog so Guided Setup can still render before
+  Python is loaded, while catalog refresh happens only after a user action.
+- Updated workflow labels from mod family selection to game profile selection so
+  adding new profiles no longer widens the Guided Setup row.

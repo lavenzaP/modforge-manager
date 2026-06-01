@@ -19,6 +19,8 @@ class DeploymentOperation:
     action: str = "copy"
     source_package_path: str = ""
     source_priority: int = 0
+    matched_rule_id: str = ""
+    safety_tier: str = "normal"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -28,6 +30,8 @@ class DeploymentOperation:
             "action": self.action,
             "source_package_path": self.source_package_path,
             "source_priority": self.source_priority,
+            "matched_rule_id": self.matched_rule_id,
+            "safety_tier": self.safety_tier,
         }
 
 
@@ -91,11 +95,29 @@ def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> De
         for mod_file in package.files:
             if _ignored(mod_file.relative_path, project.game_profile.ignored_patterns):
                 continue
-            rule = _rule_for(mod_file.relative_path, project.game_profile.deployment_rules)
+            rule = _rule_for(
+                mod_file.relative_path,
+                _rules_for_package(project, package),
+            )
             if rule is None:
                 warnings.append(f"{package.name}: no deployment rule for {mod_file.relative_path}")
                 continue
-            destination = rule.destination_for_relative(mod_file.relative_path)
+            destination = project.game_profile.destination_for_rule(
+                rule,
+                mod_file.relative_path,
+                package_id=package.id,
+                package_name=package.name,
+            )
+            if not _safe_plan_destination(destination):
+                warnings.append(f"{package.name}: unsafe destination rejected for {mod_file.relative_path}: {destination}")
+                continue
+            if rule.requires_extra_confirmation or rule.safety_tier in {"runtime-file", "dll-high-risk", "high-risk"}:
+                warnings.append(
+                    f"{package.name}: {mod_file.relative_path} maps to high-risk destination "
+                    f"{destination} ({rule.safety_tier}). Extra confirmation will be required."
+                )
+            if _protected(destination, project.game_profile.protected_paths):
+                warnings.append(f"{package.name}: {destination} matches a protected path.")
             operations.append(
                 DeploymentOperation(
                     source_mod=package.name,
@@ -103,6 +125,8 @@ def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> De
                     destination_path=destination,
                     source_package_path=str(package.path),
                     source_priority=package.priority,
+                    matched_rule_id=rule.id or ",".join(rule.patterns),
+                    safety_tier=rule.safety_tier,
                 )
             )
 
@@ -125,10 +149,32 @@ def _ignored(relative_path: str, patterns: list[str]) -> bool:
 
 
 def _rule_for(relative_path: str, rules: list[DeploymentRule]) -> DeploymentRule | None:
-    for rule in sorted(rules, key=lambda item: item.priority):
+    for rule in sorted(rules, key=lambda item: (item.priority, -item.specificity, item.id)):
         if rule.matches(relative_path):
             return rule
     return None
+
+
+def _safe_plan_destination(destination: str) -> bool:
+    normalized = destination.replace("\\", "/")
+    if not normalized or normalized.startswith("/") or normalized.startswith("//"):
+        return False
+    if len(normalized) >= 2 and normalized[1] == ":":
+        return False
+    parts = [part for part in normalized.split("/") if part]
+    return ".." not in parts
+
+
+def _protected(destination: str, patterns: list[str]) -> bool:
+    return any(fnmatchcase(destination, pattern) for pattern in patterns)
+
+
+def _rules_for_package(project: ModProject, package: ModPackage) -> list[DeploymentRule]:
+    return [
+        rule
+        for rule in project.game_profile.deployment_rules
+        if rule.accepts_container(package.detected_type)
+    ]
 
 
 def _drop_same_mod_destination_duplicates(

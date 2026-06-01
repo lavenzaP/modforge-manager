@@ -80,22 +80,22 @@ class ModFamilyCertificationTests(unittest.TestCase):
             warnings = [warning for package in packages for warning in package.warnings]
 
             self.assertTrue(any("No external tool configured for godot_pck" in warning for warning in warnings))
-            self.assertIn("mods/balance_patch.pck", destinations)
-            self.assertIn("mods/better_cards.pck", destinations)
-            self.assertIn("mods/data/cards.json", destinations)
-            self.assertIn("mods/localization/en.csv", destinations)
-            self.assertEqual(len(plan.conflicts), 1)
-            self.assertEqual(plan.conflicts[0].destination_path, "mods/better_cards.pck")
+            self.assertIn("mods/BalancePatch/balance_patch.pck", destinations)
+            self.assertIn("mods/BetterCards/better_cards.pck", destinations)
+            self.assertIn("mods/BetterCardsDuplicate/better_cards.pck", destinations)
+            self.assertIn("mods/LooseGodotMod/data/cards.json", destinations)
+            self.assertIn("mods/LooseGodotMod/localization/en.csv", destinations)
+            self.assertEqual(len(plan.conflicts), 0)
 
             entries = extract_strings(project.mods_dir / "LooseGodotMod")
             self.assertTrue(any(entry.source == "Strike+" for entry in entries))
             apply_to_staging(project, plan, packages)
             manifest = apply_to_game(project, plan, packages)
             manifest_path = project.staging_dir.parent / "manifests" / f"{manifest.manifest_id}.json"
-            self.assertTrue((project.game_root / "mods" / "better_cards.pck").exists())
+            self.assertTrue((project.game_root / "mods" / "BetterCards" / "better_cards.pck").exists())
             self.assertTrue(preview_restore_manifest(manifest_path).to_dict()["can_restore"])
             restore_manifest(manifest_path)
-            self.assertFalse((project.game_root / "mods" / "better_cards.pck").exists())
+            self.assertFalse((project.game_root / "mods" / "BetterCards" / "better_cards.pck").exists())
 
 
 class _family_project:

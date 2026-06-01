@@ -9,7 +9,15 @@ from pathlib import Path
 from modforge import __version__
 from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
-from modforge.core.game_profile import builtin_profiles
+from modforge.core.game_profile import (
+    builtin_profile,
+    builtin_profiles,
+    custom_profile_dir,
+    import_profile_file,
+    load_profile_file,
+    preview_profile_dir,
+    validate_profile,
+)
 from modforge.core.manifest_browser import (
     find_manifest,
     latest_manifest_summary,
@@ -49,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     init.set_defaults(handler=handle_project_init)
 
+    show = project_subcommands.add_parser("show", help="Show project metadata")
+    show.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    show.add_argument("--json", action="store_true")
+    show.set_defaults(handler=handle_project_show)
+
     project_export = project_subcommands.add_parser("export", help="Export project metadata only")
     project_export.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     project_export.add_argument("--out", required=True, type=Path)
@@ -66,9 +79,34 @@ def build_parser() -> argparse.ArgumentParser:
     project_audit.add_argument("--json", action="store_true")
     project_audit.set_defaults(handler=handle_project_audit)
 
-    profiles = subcommands.add_parser("profiles", help="List built-in game profiles")
+    profiles = subcommands.add_parser("profiles", help="List, validate, import, and export game profiles")
     profiles.add_argument("--json", action="store_true")
     profiles.set_defaults(handler=handle_profiles)
+    profile_catalog_subcommands = profiles.add_subparsers(dest="profiles_command")
+
+    profiles_validate = profile_catalog_subcommands.add_parser("validate", help="Validate a game profile JSON file")
+    profiles_validate.add_argument("profile_file", type=Path)
+    profiles_validate.add_argument("--json", action="store_true")
+    profiles_validate.set_defaults(handler=handle_profiles_validate)
+
+    profiles_preview = profile_catalog_subcommands.add_parser("preview-map", help="Preview destination mapping for a sample mod")
+    profiles_preview.add_argument("profile_file", type=Path)
+    profiles_preview.add_argument("sample_mod_dir", type=Path)
+    profiles_preview.add_argument("--json", action="store_true")
+    profiles_preview.set_defaults(handler=handle_profiles_preview_map)
+
+    profiles_import = profile_catalog_subcommands.add_parser("import", help="Import a custom game profile JSON file")
+    profiles_import.add_argument("profile_file", type=Path)
+    profiles_import.add_argument("--profile-dir", type=Path)
+    profiles_import.add_argument("--force", action="store_true")
+    profiles_import.add_argument("--json", action="store_true")
+    profiles_import.set_defaults(handler=handle_profiles_import)
+
+    profiles_export = profile_catalog_subcommands.add_parser("export", help="Export a game profile by id")
+    profiles_export.add_argument("profile_id")
+    profiles_export.add_argument("--out", required=True, type=Path)
+    profiles_export.add_argument("--json", action="store_true")
+    profiles_export.set_defaults(handler=handle_profiles_export)
 
     doctor = subcommands.add_parser("doctor", help="Run runtime and project smoke checks")
     doctor.add_argument("--project-file", "--project", type=Path, default=DEFAULT_PROJECT_FILE)
@@ -221,6 +259,19 @@ def handle_project_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_project_show(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    if args.json:
+        print(json.dumps(project.to_dict(), indent=2))
+    else:
+        print(f"Project: {project.name}")
+        print(f"Game root: {project.game_root}")
+        print(f"Mods dir: {project.mods_dir}")
+        print(f"Staging dir: {project.staging_dir}")
+        print(f"Profile: {project.game_profile.display_name} ({project.game_profile.id})")
+    return 0
+
+
 def handle_project_export(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
     payload = export_project(project, args.out, include_manifests=not args.no_manifests)
@@ -253,6 +304,59 @@ def handle_profiles(args: argparse.Namespace) -> int:
     else:
         for profile in profiles:
             print(f"{profile.id:16} {profile.display_name}")
+    return 0
+
+
+def handle_profiles_validate(args: argparse.Namespace) -> int:
+    profile = load_profile_file(args.profile_file)
+    report = validate_profile(profile)
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_profile_validation(report.to_dict()))
+    return 1 if report.has_errors else 0
+
+
+def handle_profiles_preview_map(args: argparse.Namespace) -> int:
+    profile = load_profile_file(args.profile_file)
+    report = validate_profile(profile)
+    mappings = preview_profile_dir(profile, args.sample_mod_dir)
+    payload = {
+        "profile": profile.to_dict(),
+        "validation": report.to_dict(),
+        "mappings": [mapping.to_dict() for mapping in mappings],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(format_profile_validation(report.to_dict()))
+        print(format_profile_preview(payload))
+    return 1 if report.has_errors else 0
+
+
+def handle_profiles_import(args: argparse.Namespace) -> int:
+    try:
+        destination = import_profile_file(args.profile_file, args.profile_dir, force=args.force)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    profile = load_profile_file(destination)
+    if args.json:
+        print(json.dumps({"imported": str(destination), "profile": profile.to_dict()}, indent=2))
+    else:
+        print(f"Imported profile {profile.id}: {destination}")
+        print(f"Profile dir: {Path(args.profile_dir) if args.profile_dir else custom_profile_dir()}")
+    return 0
+
+
+def handle_profiles_export(args: argparse.Namespace) -> int:
+    profile = builtin_profile(args.profile_id)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(profile.to_dict(), indent=2), encoding="utf-8")
+    if args.json:
+        print(json.dumps({"exported": str(args.out), "profile": profile.to_dict()}, indent=2))
+    else:
+        print(f"Exported profile {profile.id}: {args.out}")
     return 0
 
 
@@ -547,6 +651,27 @@ def format_project_audit(report: dict[str, object]) -> str:
     lines = [f"Project audit: {report['project_name']}"]
     for issue in report["issues"]:
         lines.append(f"{issue['status'].upper():7} {issue['name']}: {issue['message']}")
+    return "\n".join(lines)
+
+
+def format_profile_validation(report: dict[str, object]) -> str:
+    lines = [f"Profile validation: {report['profile_id']}"]
+    for issue in report["issues"]:
+        lines.append(f"{issue['status'].upper():7} {issue['name']}: {issue['message']}")
+    return "\n".join(lines)
+
+
+def format_profile_preview(payload: dict[str, object]) -> str:
+    lines = ["Preview mapping:"]
+    for mapping in payload["mappings"]:  # type: ignore[index]
+        destination = mapping["destination_path"] or "-"  # type: ignore[index]
+        group = f" group={mapping['group_id']}" if mapping.get("group_id") else ""  # type: ignore[union-attr]
+        lines.append(
+            f"- {mapping['source_path']} -> {destination} "
+            f"rule={mapping['rule_id'] or '-'} tier={mapping['safety_tier']}{group}"
+        )
+        for warning in mapping.get("warnings", []):  # type: ignore[union-attr]
+            lines.append(f"  WARNING: {warning}")
     return "\n".join(lines)
 
 

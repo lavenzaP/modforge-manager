@@ -94,6 +94,11 @@ class CliTests(unittest.TestCase):
                 )
 
             self.assertTrue(output_csv.exists())
+            code, output = self.run_cli(["project", "show", "--project-file", str(project_file), "--json"])
+            self.assertEqual(code, 0)
+            project_show = json.loads(output)
+            self.assertEqual(project_show["name"], "Demo")
+            self.assertEqual(project_show["game_profile"]["id"], "mo2-mod")
             payload = json.loads(project_file.read_text(encoding="utf-8"))
             self.assertEqual(payload["name"], "Demo")
             self.assertEqual(payload["game_profile"]["id"], "mo2-mod")
@@ -302,6 +307,75 @@ class CliTests(unittest.TestCase):
                 0,
             )
             self.assertTrue((import_dir / "modforge.project.json").exists())
+
+    def test_cli_profile_catalog_validate_preview_import_export(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            exported = root / "stellar.json"
+            sample = root / "sample"
+            custom_dir = root / "profiles"
+            custom_profile = root / "custom.json"
+            sample.mkdir()
+            (sample / "CoolOutfit_P.pak").write_bytes(b"pak")
+            (sample / "CoolOutfit_P.ucas").write_bytes(b"ucas")
+            (sample / "CoolOutfit_P.utoc").write_bytes(b"utoc")
+            custom_profile.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "id": "custom-game",
+                        "display_name": "Custom Game",
+                        "deployment_rules": [
+                            {
+                                "id": "pak-to-mods",
+                                "source_pattern": "*.pak",
+                                "destination_root": "Mods",
+                                "destination_pattern": "{filename}",
+                            }
+                        ],
+                        "validation_samples": [
+                            {
+                                "source": "Example.pak",
+                                "expected_destination": "Mods/Example.pak",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            code, output = self.run_cli(["profiles", "--json"])
+            self.assertEqual(code, 0)
+            self.assertIn("stellar-blade.experimental", [item["id"] for item in json.loads(output)])
+
+            self.assertEqual(
+                self.run_cli(["profiles", "export", "stellar-blade.experimental", "--out", str(exported)])[0],
+                0,
+            )
+            self.assertTrue(exported.exists())
+            self.assertEqual(self.run_cli(["profiles", "validate", str(exported), "--json"])[0], 0)
+
+            code, output = self.run_cli(["profiles", "preview-map", str(exported), str(sample), "--json"])
+            self.assertEqual(code, 0)
+            preview = json.loads(output)
+            destinations = [item["destination_path"] for item in preview["mappings"]]
+            self.assertIn("SB/Content/Paks/~mods/CoolOutfit_P.pak", destinations)
+            self.assertTrue(any(item["group_id"].startswith("unreal-sidecar:") for item in preview["mappings"]))
+
+            self.assertEqual(
+                self.run_cli(
+                    [
+                        "profiles",
+                        "import",
+                        str(custom_profile),
+                        "--profile-dir",
+                        str(custom_dir),
+                        "--json",
+                    ]
+                )[0],
+                0,
+            )
+            self.assertTrue((custom_dir / "custom-game.json").exists())
 
 
 if __name__ == "__main__":

@@ -32,6 +32,9 @@ modforge-gui-qt = "modforge.gui.main_window:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+modforge = ["profiles/*.json"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

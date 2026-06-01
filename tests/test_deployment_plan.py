@@ -42,7 +42,33 @@ class DeploymentPlanTests(unittest.TestCase):
         packages = scan_mods(project.mods_dir)
         plan = build_deployment_plan(project, packages)
 
-        self.assertIn("mods/config/settings.json", [operation.destination_path for operation in plan.operations])
+        self.assertIn("mods/BetterUI/config/settings.json", [operation.destination_path for operation in plan.operations])
+
+    def test_sts2_loose_mod_manifests_preserve_mod_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "silentSkin").mkdir(parents=True)
+            (mods / "STS2-RitsuLib").mkdir(parents=True)
+            game.mkdir()
+            (mods / "silentSkin" / "mod_manifest.json").write_text('{"id": "silentSkin"}', encoding="utf-8")
+            (mods / "silentSkin" / "silentSkin.pck").write_bytes(b"pck")
+            (mods / "STS2-RitsuLib" / "mod_manifest.json").write_text('{"id": "STS2-RitsuLib"}', encoding="utf-8")
+            project = ModProject.create("STS2", game, mods, root / "staging", game_profile="sts2-mods")
+
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+            destinations = sorted(operation.destination_path for operation in plan.operations)
+
+            self.assertEqual(
+                destinations,
+                [
+                    "mods/STS2-RitsuLib/mod_manifest.json",
+                    "mods/silentSkin/mod_manifest.json",
+                    "mods/silentSkin/silentSkin.pck",
+                ],
+            )
+            self.assertEqual(plan.conflicts, [])
 
     def test_mo2_profile_ignores_meta_ini(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -73,6 +99,39 @@ class DeploymentPlanTests(unittest.TestCase):
                 plan.operations[0].destination_path,
                 "Content/Paks/~mods/Example.pak",
             )
+
+    def test_stellar_blade_profile_maps_cns_and_runtime_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            (mods / "CNSOutfit").mkdir(parents=True)
+            (mods / "Runtime").mkdir(parents=True)
+            (mods / "AlreadyLayout" / "SB" / "Content" / "Paks" / "~mods").mkdir(parents=True)
+            game.mkdir()
+            for suffix in [".pak", ".ucas", ".utoc"]:
+                (mods / "CNSOutfit" / f"CoolOutfit_P{suffix}").write_bytes(b"archive")
+            (mods / "CNSOutfit" / "CoolOutfit_P.json").write_text("{}", encoding="utf-8")
+            (mods / "Runtime" / "dwmapi.dll").write_bytes(b"dll")
+            (mods / "AlreadyLayout" / "SB" / "Content" / "Paks" / "~mods" / "Already_P.pak").write_bytes(b"archive")
+            project = ModProject.create("Stellar", game, mods, root / "staging", game_profile="stellar-blade.experimental")
+
+            plan = build_deployment_plan(project, scan_mods(project.mods_dir))
+            destinations = sorted(operation.destination_path for operation in plan.operations)
+
+            self.assertEqual(
+                destinations,
+                [
+                    "SB/Binaries/Win64/dwmapi.dll",
+                    "SB/Content/Paks/~mods/Already_P.pak",
+                    "SB/Content/Paks/~mods/CoolOutfit_P.json",
+                    "SB/Content/Paks/~mods/CoolOutfit_P.pak",
+                    "SB/Content/Paks/~mods/CoolOutfit_P.ucas",
+                    "SB/Content/Paks/~mods/CoolOutfit_P.utoc",
+                ],
+            )
+            self.assertTrue(any("high-risk destination" in warning for warning in plan.warnings))
+            self.assertTrue(any("matches a protected path" in warning for warning in plan.warnings))
 
     def test_bepinex_profile_maps_common_plugin_layouts(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

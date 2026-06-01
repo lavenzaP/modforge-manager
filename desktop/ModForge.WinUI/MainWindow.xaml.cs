@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
@@ -9,6 +11,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
+using Windows.Storage.Pickers;
 using Windows.UI;
 using Windows.UI.Text;
 
@@ -19,44 +22,53 @@ public sealed partial class MainWindow : Window
     private readonly List<ModRow> mods;
     private readonly List<ConflictRow> conflicts;
     private readonly List<string> warnings;
+    private readonly List<ProfileOption> profileOptions;
+    private readonly PythonCoreService pythonCore = new();
     private AppWindow? appWindow;
     private DispatcherQueueTimer? windowSizeSaveTimer;
     private SizeInt32 pendingWindowSize;
+    private CoreProject? currentProject;
+    private CorePlan? currentPlan;
+    private CoreManifest? stagingManifest;
+    private string selectedProfileId = "mhw-reframework";
+    private string selectedGameFolder = "";
+    private string selectedModsFolder = "";
     private WorkflowState workflowState = WorkflowState.NoProject;
     private string activePage = "Home";
     private string selectedFamily = "Not selected";
     private string statusMessage = "Start Guided Setup to open a project safely.";
+    private bool isBusy;
+    private bool profilesLoaded;
+    private bool profilesLoading;
     private bool planReviewManuallyChecked;
-    private bool gameApplyConfirmationChecked;
 
     public MainWindow()
     {
         InitializeComponent();
         Title = "ModForge Manager";
-        mods = CreateMods();
-        conflicts = CreateConflicts();
-        warnings = CreateWarnings();
+        mods = new List<ModRow>();
+        conflicts = new List<ConflictRow>();
+        warnings = new List<string>();
+        profileOptions = new List<ProfileOption>();
+        SeedFallbackProfiles();
         ConfigureWindowPersistence();
         ShellNav.SelectedItem = NavHome;
         ShowPage("Home");
     }
 
-    private void OpenProjectButton_Click(object sender, RoutedEventArgs e)
+    private async void OpenProjectButton_Click(object sender, RoutedEventArgs e)
     {
-        AdvanceState(WorkflowState.ProjectOpened, "Project opened. Choose a mod family next.");
-        ShowPage("Guided Setup");
+        await OpenProjectAsync();
     }
 
-    private void ScanButton_Click(object sender, RoutedEventArgs e)
+    private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
-        AdvanceState(WorkflowState.Scanned, "Scan complete. No files were changed.");
-        ShowPage("Mods");
+        await ScanProjectAsync();
     }
 
-    private void PlanButton_Click(object sender, RoutedEventArgs e)
+    private async void PlanButton_Click(object sender, RoutedEventArgs e)
     {
-        AdvanceState(WorkflowState.PlanReady, "Plan is ready. Review conflicts before staging.");
-        ShowPage("Plan");
+        await CreatePlanAsync();
     }
 
     private void ApplyButton_Click(object sender, RoutedEventArgs e)
@@ -76,11 +88,403 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void ShellNav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private async Task OpenGuidedSetupAsync()
+    {
+        ShowPage("Guided Setup");
+        await EnsureProfilesLoadedAsync();
+    }
+
+    private async Task EnsureProfilesLoadedAsync(bool force = false)
+    {
+        if (profilesLoading || isBusy)
+        {
+            return;
+        }
+        if (profilesLoaded && !force)
+        {
+            return;
+        }
+
+        await RunCoreActionAsync("Loading game profile catalog through Python...", async () =>
+        {
+            profilesLoading = true;
+            try
+            {
+                var loaded = await pythonCore.ListProfilesAsync();
+                profileOptions.Clear();
+                profileOptions.AddRange(loaded.Select(ProfileOption.FromCore));
+                if (profileOptions.Count == 0)
+                {
+                    SeedFallbackProfiles();
+                }
+
+                profilesLoaded = true;
+                SetStatus($"Profile catalog loaded: {profileOptions.Count} profiles available.");
+            }
+            finally
+            {
+                profilesLoading = false;
+            }
+        });
+    }
+
+    private async Task OpenProjectAsync()
+    {
+        var projectFile = await PickProjectFileAsync();
+        if (string.IsNullOrWhiteSpace(projectFile))
+        {
+            SetStatus("Open project canceled.");
+            return;
+        }
+
+        await LoadProjectAsync(projectFile);
+    }
+
+    private async Task LoadProjectAsync(string projectFile)
+    {
+        await RunCoreActionAsync("Loading project through Python...", async () =>
+        {
+            currentProject = await pythonCore.LoadProjectAsync(projectFile);
+            selectedFamily = currentProject.ProfileName;
+            selectedProfileId = currentProject.ProfileId;
+            selectedGameFolder = currentProject.GameRoot;
+            selectedModsFolder = currentProject.ModsDir;
+            ResetCoreResults();
+            workflowState = WorkflowState.ModsFolderSelected;
+            SetStatus("Project loaded. Scan Mods is now available.");
+            ShowPage("Guided Setup");
+        });
+    }
+
+    private async Task ChooseGameFolderAsync()
+    {
+        var folder = await PickFolderAsync();
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            SetStatus("Game folder selection canceled.");
+            return;
+        }
+
+        selectedGameFolder = folder;
+        currentProject = null;
+        ResetCoreResults();
+        workflowState = WorkflowState.ModFamilyChosen;
+        AdvanceState(WorkflowState.GameFolderSelected, "Game folder selected. Choose the mods folder next.");
+        ShowPage("Guided Setup");
+    }
+
+    private async Task ChooseModsFolderAsync()
+    {
+        var folder = await PickFolderAsync();
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            SetStatus("Mods folder selection canceled.");
+            return;
+        }
+
+        selectedModsFolder = folder;
+        var projectFile = await PickProjectSaveFileAsync(folder);
+        if (string.IsNullOrWhiteSpace(projectFile))
+        {
+            currentProject = null;
+            ResetCoreResults();
+            workflowState = WorkflowState.GameFolderSelected;
+            AdvanceState(WorkflowState.ModsFolderSelected, "Mods folder selected. Save a project file or open an existing project before scanning.");
+            ShowPage("Guided Setup");
+            return;
+        }
+
+        await RunCoreActionAsync("Creating project file through Python...", async () =>
+        {
+            var projectName = SuggestedProjectName(selectedGameFolder);
+            var stagingDir = Path.Combine(Path.GetDirectoryName(projectFile) ?? selectedModsFolder, ".modforge", "staging");
+            currentProject = await pythonCore.CreateProjectAsync(
+                projectName,
+                selectedGameFolder,
+                selectedModsFolder,
+                stagingDir,
+                selectedProfileId,
+                projectFile);
+            selectedFamily = currentProject.ProfileName;
+            selectedProfileId = currentProject.ProfileId;
+            selectedGameFolder = currentProject.GameRoot;
+            selectedModsFolder = currentProject.ModsDir;
+            workflowState = WorkflowState.ModsFolderSelected;
+            SetStatus("Project created. Scan Mods is now available.");
+            ShowPage("Guided Setup");
+        });
+    }
+
+    private async Task ScanProjectAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before scanning.");
+            ShowPage("Guided Setup");
+            return;
+        }
+
+        await RunCoreActionAsync("Scanning mods through Python...", async () =>
+        {
+            await RefreshScanOnlyAsync();
+            conflicts.Clear();
+            warnings.Clear();
+            currentPlan = null;
+            stagingManifest = null;
+            planReviewManuallyChecked = false;
+            workflowState = WorkflowState.Scanned;
+            SetStatus($"Scan complete: {mods.Count} mods found. No files were changed.");
+            ShowPage("Mods");
+        });
+    }
+
+    private async Task SetModEnabledAsync(ModRow mod, bool enabled)
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before changing mod state.");
+            return;
+        }
+
+        var verb = enabled ? "Enabling" : "Disabling";
+        await RunCoreActionAsync($"{verb} {mod.Name} through Python...", async () =>
+        {
+            await pythonCore.SetModEnabledAsync(currentProject.ProjectFile, mod.Id, enabled);
+            if (currentPlan != null || HasReached(WorkflowState.PlanReady))
+            {
+                await RefreshScanAndPlanAsync();
+                workflowState = WorkflowState.PlanReady;
+                planReviewManuallyChecked = false;
+                stagingManifest = null;
+                SetStatus($"{mod.Name} {(enabled ? "enabled" : "disabled")}. Dry-run plan rebuilt; review is required before staging.");
+            }
+            else
+            {
+                await RefreshScanOnlyAsync();
+                conflicts.Clear();
+                warnings.Clear();
+                currentPlan = null;
+                stagingManifest = null;
+                planReviewManuallyChecked = false;
+                workflowState = WorkflowState.Scanned;
+                SetStatus($"{mod.Name} {(enabled ? "enabled" : "disabled")}. Scan refreshed; create a plan before staging.");
+            }
+
+            ShowPage("Mods");
+        });
+    }
+
+    private async Task CreatePlanAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before planning.");
+            ShowPage("Guided Setup");
+            return;
+        }
+
+        await RunCoreActionAsync("Creating dry-run plan through Python...", async () =>
+        {
+            currentPlan = await pythonCore.CreatePlanAsync(currentProject.ProjectFile);
+            conflicts.Clear();
+            foreach (var conflict in currentPlan.Conflicts)
+            {
+                conflicts.Add(new ConflictRow(conflict.Destination, conflict.WinningMod, conflict.LosingMod, conflict.Risk, conflict.Participants, conflict.Sources));
+            }
+
+            warnings.Clear();
+            warnings.AddRange(currentPlan.Warnings);
+            ApplyConflictCountsToMods();
+            stagingManifest = null;
+            planReviewManuallyChecked = false;
+            workflowState = WorkflowState.PlanReady;
+            SetStatus($"Dry-run plan ready: {currentPlan.Operations} operations, {currentPlan.Conflicts.Count} conflicts, {currentPlan.Warnings.Count} warnings.");
+            ShowPage("Plan");
+        });
+    }
+
+    private async Task PreferConflictWinnerAsync(ConflictRow conflict, string preferredModName)
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before changing priority.");
+            return;
+        }
+
+        var preferred = mods.FirstOrDefault(item => string.Equals(item.Name, preferredModName, StringComparison.OrdinalIgnoreCase));
+        if (preferred == null || string.IsNullOrWhiteSpace(preferred.Id))
+        {
+            SetStatus("Could not find scanned mod id for " + preferredModName + ".");
+            return;
+        }
+
+        var ordered = mods
+            .OrderBy(item => item.Priority)
+            .Select(item => item.Id)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ordered.RemoveAll(item => string.Equals(item, preferred.Id, StringComparison.OrdinalIgnoreCase));
+        ordered.Add(preferred.Id);
+
+        await RunCoreActionAsync("Updating priority and rebuilding the dry-run plan...", async () =>
+        {
+            await pythonCore.SetPriorityAsync(currentProject.ProjectFile, ordered);
+            await RefreshScanAndPlanAsync();
+            workflowState = WorkflowState.PlanReady;
+            planReviewManuallyChecked = false;
+            stagingManifest = null;
+            SetStatus($"{preferred.Name} now has the highest priority. Review the updated plan before staging.");
+            ShowPage("Plan");
+        });
+    }
+
+    private async Task RefreshScanAndPlanAsync()
+    {
+        if (currentProject == null)
+        {
+            throw new PythonCoreException("Open or create a project before refreshing the plan.");
+        }
+
+        await RefreshScanOnlyAsync();
+
+        currentPlan = await pythonCore.CreatePlanAsync(currentProject.ProjectFile);
+        conflicts.Clear();
+        foreach (var item in currentPlan.Conflicts)
+        {
+            conflicts.Add(new ConflictRow(item.Destination, item.WinningMod, item.LosingMod, item.Risk, item.Participants, item.Sources));
+        }
+
+        warnings.Clear();
+        warnings.AddRange(currentPlan.Warnings);
+        ApplyConflictCountsToMods();
+    }
+
+    private async Task RefreshScanOnlyAsync()
+    {
+        if (currentProject == null)
+        {
+            throw new PythonCoreException("Open or create a project before scanning.");
+        }
+
+        mods.Clear();
+        foreach (var mod in await pythonCore.ScanModsAsync(currentProject.ProjectFile))
+        {
+            mods.Add(ToModRow(mod));
+        }
+    }
+
+    private async Task ApplyStagingAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before staging.");
+            return;
+        }
+
+        if (!CanApplyToStaging())
+        {
+            SetStatus("Review the plan manually before applying to staging.");
+            return;
+        }
+
+        await RunCoreActionAsync("Applying to staging through Python...", async () =>
+        {
+            stagingManifest = await pythonCore.ApplyStagingAsync(currentProject.ProjectFile);
+            workflowState = WorkflowState.Staged;
+            SetStatus($"Applied to staging: {stagingManifest.Copied} copied, {stagingManifest.Overwritten} overwritten, {stagingManifest.Skipped} skipped.");
+            ShowPage("Apply & Restore");
+        });
+    }
+
+    private async Task RunCoreActionAsync(string busyMessage, Func<Task> action)
+    {
+        if (isBusy)
+        {
+            SetStatus("A Python action is already running.");
+            return;
+        }
+
+        try
+        {
+            isBusy = true;
+            SetStatus(busyMessage);
+            await action();
+        }
+        catch (PythonCoreException ex)
+        {
+            SetStatus(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Action failed: " + ex.Message);
+        }
+        finally
+        {
+            isBusy = false;
+            ShowPage(activePage);
+        }
+    }
+
+    private async Task<string?> PickProjectFileAsync()
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".json");
+        picker.FileTypeFilter.Add(".mfproj");
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        InitializePicker(picker);
+        var file = await picker.PickSingleFileAsync();
+        return file?.Path;
+    }
+
+    private async Task<string?> PickProjectSaveFileAsync(string modsFolder)
+    {
+        var picker = new FileSavePicker
+        {
+            SuggestedFileName = "modforge.project",
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary
+        };
+        picker.FileTypeChoices.Add("ModForge project", new List<string> { ".json" });
+        if (Directory.Exists(modsFolder))
+        {
+            picker.SuggestedFileName = Path.GetFileName(Path.GetFullPath(modsFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) + ".modforge.project";
+        }
+
+        InitializePicker(picker);
+        var file = await picker.PickSaveFileAsync();
+        return file?.Path;
+    }
+
+    private async Task<string?> PickFolderAsync()
+    {
+        var picker = new FolderPicker
+        {
+            SuggestedStartLocation = PickerLocationId.ComputerFolder
+        };
+        picker.FileTypeFilter.Add("*");
+        InitializePicker(picker);
+        var folder = await picker.PickSingleFolderAsync();
+        return folder?.Path;
+    }
+
+    private void InitializePicker(object picker)
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+    }
+
+    private async void ShellNav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItemContainer?.Tag is string page)
         {
-            ShowPage(page);
+            if (page == "Guided Setup")
+            {
+                await OpenGuidedSetupAsync();
+            }
+            else
+            {
+                ShowPage(page);
+            }
         }
     }
 
@@ -144,8 +548,8 @@ public sealed partial class MainWindow : Window
                 ? "Continue through the gated workflow. The shell will not scan, run Python, stage, or write game files until a matching action is unlocked."
                 : "Open a project or start Guided Setup. No scan, Python process, staging, or game write happens at startup.", 14, Secondary),
             ButtonRow(
-                PrimaryButton(HasReached(WorkflowState.ProjectOpened) ? "Continue Guided Setup" : "Start Guided Setup", AccentBlue, (_, _) => ShowPage("Guided Setup")),
-                PrimaryButton("Open Project", AccentGreen, (_, _) => { AdvanceState(WorkflowState.ProjectOpened, "Project opened. Choose a mod family next."); ShowPage("Guided Setup"); })),
+                PrimaryButton(HasReached(WorkflowState.ProjectOpened) ? "Continue Guided Setup" : "Start Guided Setup", AccentBlue, async (_, _) => await OpenGuidedSetupAsync()),
+                PrimaryButton("Open Project", AccentGreen, async (_, _) => await OpenProjectAsync())),
             NextActionCard()));
         left.Children.Add(hero);
 
@@ -171,13 +575,13 @@ public sealed partial class MainWindow : Window
         var steps = Stack();
         steps.Children.Add(Text("Interactive setup", 22, SemiBoldWeight, White));
         steps.Children.Add(Spaced("Work left to right through each row. Locked actions stay disabled until the shared workflow state reaches the prerequisite.", 13, Secondary));
-        steps.Children.Add(CompactWizardStep(1, "Choose mod family", "Pick REFramework, Unreal, or Godot/STS2.", FamilyButtons(), WorkflowState.ModFamilyChosen, WorkflowState.NoProject));
-        steps.Children.Add(CompactWizardStep(2, "Select game folder", "Choose the game root. No writes happen while selecting.", WizardButton("Choose game folder", IsCurrentStep(WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen), (_, _) => { AdvanceState(WorkflowState.GameFolderSelected, "Game folder selected."); ShowPage("Guided Setup"); }), WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen));
-        steps.Children.Add(CompactWizardStep(3, "Select mods folder", "Choose the folder or archive collection to inspect.", WizardButton("Choose mods folder", IsCurrentStep(WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected), (_, _) => { AdvanceState(WorkflowState.ModsFolderSelected, "Mods folder selected. Scan is now available."); ShowPage("Guided Setup"); }), WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected));
-        steps.Children.Add(CompactWizardStep(4, "Scan mods", "Read-only scan. No files will be changed.", WizardButton("Scan now", IsCurrentStep(WorkflowState.Scanned, WorkflowState.ModsFolderSelected), (_, _) => { AdvanceState(WorkflowState.Scanned, "Scan complete. Review the Mods page."); ShowPage("Mods"); }), WorkflowState.Scanned, WorkflowState.ModsFolderSelected));
-        steps.Children.Add(CompactWizardStep(5, "Review plan and conflicts", "Inspect winners, overwritten destinations, and warnings.", WizardButton("Open plan review", IsCurrentStep(WorkflowState.PlanReady, WorkflowState.Scanned), (_, _) => { AdvanceState(WorkflowState.PlanReady, "Plan is ready for review."); ShowPage("Plan"); }), WorkflowState.PlanReviewed, WorkflowState.Scanned));
-        steps.Children.Add(CompactWizardStep(6, "Apply to staging", "First write step. The game folder is still untouched.", WizardButton(StagingActionLabel(), CanApplyToStaging(), (_, _) => { AdvanceState(WorkflowState.Staged, "Applied to staging. Game apply can now be confirmed."); ShowPage("Apply & Restore"); }), WorkflowState.Staged, WorkflowState.PlanReviewed));
-        steps.Children.Add(CompactWizardStep(7, "Apply to game", "Requires staging plus explicit confirmation.", WizardButton(HasReached(WorkflowState.RestoreAvailable) ? "Restore ready" : "Open game apply", HasReached(WorkflowState.Staged) && !HasReached(WorkflowState.RestoreAvailable), (_, _) => { ShowPage("Apply & Restore"); SetStatus("Confirm game apply from Apply & Restore."); }), WorkflowState.RestoreAvailable, WorkflowState.Staged));
+        steps.Children.Add(CompactWizardStep(1, "Choose game profile", ProfileStepDetail(), ProfilePicker(), WorkflowState.ModFamilyChosen, WorkflowState.NoProject));
+        steps.Children.Add(CompactWizardStep(2, "Select game folder", selectedGameFolder.Length > 0 ? selectedGameFolder : "Choose the game root. No game files are changed while selecting.", WizardButton("Choose game folder", IsCurrentStep(WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen), async (_, _) => await ChooseGameFolderAsync()), WorkflowState.GameFolderSelected, WorkflowState.ModFamilyChosen));
+        steps.Children.Add(CompactWizardStep(3, "Select mods folder", selectedModsFolder.Length > 0 ? selectedModsFolder : "Choose the folder or archive collection to inspect, then save a project file.", WizardButton("Choose mods folder", IsCurrentStep(WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected), async (_, _) => await ChooseModsFolderAsync()), WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected));
+        steps.Children.Add(CompactWizardStep(4, "Scan mods", "Read-only Python scan. No files will be changed.", WizardButton(HasReached(WorkflowState.Scanned) ? "Scan again" : "Scan now", CanScan(), async (_, _) => await ScanProjectAsync()), WorkflowState.Scanned, WorkflowState.ModsFolderSelected));
+        steps.Children.Add(CompactWizardStep(5, "Review plan and conflicts", "Create a dry-run plan, then inspect winners, overwritten destinations, and warnings.", WizardButton(HasReached(WorkflowState.PlanReady) ? "Rebuild plan" : "Create plan", CanCreatePlan(), async (_, _) => await CreatePlanAsync()), WorkflowState.PlanReviewed, WorkflowState.Scanned));
+        steps.Children.Add(CompactWizardStep(6, "Apply to staging", "First write step. The game folder is still untouched.", WizardButton(StagingActionLabel(), CanApplyToStaging(), async (_, _) => await ApplyStagingAsync()), WorkflowState.Staged, WorkflowState.PlanReviewed));
+        steps.Children.Add(CompactWizardStep(7, "Apply to game", "Locked in 6E. Staging must be proven first.", WizardButton(HasReached(WorkflowState.Staged) ? "Open staging result" : "Game apply locked", HasReached(WorkflowState.Staged), (_, _) => { ShowPage("Apply & Restore"); SetStatus("Game apply remains locked in this milestone. Review the staging manifest first."); }), WorkflowState.RestoreAvailable, WorkflowState.Staged));
 
         return Panel(steps);
     }
@@ -188,11 +592,22 @@ public sealed partial class MainWindow : Window
         {
             return EmptyActionPage(
                 "No scan results yet.",
-                "Select a mod family, game folder, and mods folder before scanning. Scan is read-only and does not change files.",
+                "Select a game profile, game folder, and mods folder before scanning. Scan is read-only and does not change files.",
                 "Scan Mods",
                 CanScan(),
-                (_, _) => { AdvanceState(WorkflowState.Scanned, "Scan complete. Mod results are ready."); ShowPage("Mods"); },
-                new[] { StepStateText("Project", WorkflowState.ProjectOpened), StepStateText("Family", WorkflowState.ModFamilyChosen), StepStateText("Game folder", WorkflowState.GameFolderSelected), StepStateText("Mods folder", WorkflowState.ModsFolderSelected) });
+                async (_, _) => await ScanProjectAsync(),
+                new[] { StepStateText("Project", WorkflowState.ProjectOpened), StepStateText("Profile", WorkflowState.ModFamilyChosen), StepStateText("Game folder", WorkflowState.GameFolderSelected), StepStateText("Mods folder", WorkflowState.ModsFolderSelected) });
+        }
+
+        if (mods.Count == 0)
+        {
+            return EmptyActionPage(
+                "No mods found.",
+                "The selected mods folder was scanned, but no mod packages were detected. Choose another project or scan again after adding mods.",
+                "Scan again",
+                CanScan(),
+                async (_, _) => await ScanProjectAsync(),
+                new[] { CurrentProjectLine(), "Python scan completed without changing files." });
         }
 
         var grid = TwoColumnGrid(1.75, 1.0);
@@ -240,7 +655,7 @@ public sealed partial class MainWindow : Window
                 "Run a scan first, then create the plan. The plan is the review contract before staging unlocks.",
                 "Create plan",
                 CanCreatePlan(),
-                (_, _) => { AdvanceState(WorkflowState.PlanReady, "Plan is ready. Review required."); ShowPage("Plan"); },
+                async (_, _) => await CreatePlanAsync(),
                 new[] { StepStateText("Scan", WorkflowState.Scanned), "Plan review: pending", "Staging: locked" });
         }
 
@@ -250,23 +665,44 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(left);
         left.Children.Add(Panel(Stack(
             Text("Plan Summary", 22, SemiBoldWeight, White),
-            Line("Copy to staging", "1,842 files", AccentGreen),
-            Line("Destination conflicts", "5 conflicts affecting 4 mods", AccentRed),
-            Line("Warnings", "3 review items", AccentAmber))));
+            Line("Copy to staging", $"{currentPlan?.WinningOperations ?? 0} winning operations", AccentGreen),
+            Line("Destination conflicts", $"{conflicts.Count} conflicts", conflicts.Count > 0 ? AccentRed : AccentGreen),
+            Line("Warnings", $"{warnings.Count} review items", warnings.Count > 0 ? AccentAmber : AccentGreen))));
 
-        left.Children.Add(SectionTitle("Conflict list"));
-        left.Children.Add(HeaderRow(new[] { "Destination", "Winning Mod", "Losing Mod", "Risk" }));
-        var conflictList = new ListView { Background = Brush("#0F1721"), BorderBrush = Brush("#243141"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
-        foreach (var conflict in conflicts)
+        left.Children.Add(SectionTitle("Conflict details"));
+        if (conflicts.Count == 0)
         {
-            conflictList.Items.Add(ConflictListRow(conflict));
+            left.Children.Add(InfoPanel("No destination conflicts", new[]
+            {
+                "No two enabled mods write to the same destination in the latest dry-run plan."
+            }));
         }
-        left.Children.Add(conflictList);
+        else
+        {
+            var conflictList = new ListView
+            {
+                Background = Brush("#0F1721"),
+                BorderBrush = Brush("#243141"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8)
+            };
+            foreach (var conflict in conflicts)
+            {
+                conflictList.Items.Add(ConflictListRow(conflict));
+            }
+            left.Children.Add(conflictList);
+        }
 
         var right = Stack();
         Grid.SetColumn(right, 1);
         grid.Children.Add(right);
         right.Children.Add(InfoPanel("Warnings", warnings));
+        right.Children.Add(InfoPanel("Conflict priority", new[]
+        {
+            "The winner is the enabled mod with the highest priority for the same destination.",
+            "Use the Prefer buttons in a conflict row to move a mod to the end of the active priority order.",
+            "Changing priority rebuilds the dry-run plan and locks staging until you review it again."
+        }));
 
         var checkbox = new CheckBox
         {
@@ -276,7 +712,7 @@ public sealed partial class MainWindow : Window
             IsEnabled = !planReviewManuallyChecked && !HasReached(WorkflowState.Staged),
             Margin = new Thickness(0, 14, 0, 12)
         };
-        var staging = PrimaryButton(StagingActionLabel(), AccentGreen, (_, _) => { AdvanceState(WorkflowState.Staged, "Applied to staging. Game apply is now available."); ShowPage("Apply & Restore"); });
+        var staging = PrimaryButton(StagingActionLabel(), AccentGreen, async (_, _) => await ApplyStagingAsync());
         staging.IsEnabled = CanApplyToStaging();
         checkbox.Checked += (_, _) =>
         {
@@ -301,7 +737,7 @@ public sealed partial class MainWindow : Window
                 "Create and review a plan before staging, game apply, manifests, or restore actions become available.",
                 "Open Plan",
                 CanCreatePlan(),
-                (_, _) => { AdvanceState(WorkflowState.PlanReady, "Plan is ready. Review required."); ShowPage("Plan"); },
+                async (_, _) => await CreatePlanAsync(),
                 new[] { StepStateText("Scan", WorkflowState.Scanned), "Plan: required", "Staging: locked", "Restore: locked" });
         }
 
@@ -310,7 +746,7 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(left, 0);
         grid.Children.Add(left);
 
-        var staging = PrimaryButton(StagingActionLabel(), AccentGreen, (_, _) => { AdvanceState(WorkflowState.Staged, "Applied to staging. Game apply now requires explicit confirmation."); ShowPage("Apply & Restore"); });
+        var staging = PrimaryButton(StagingActionLabel(), AccentGreen, async (_, _) => await ApplyStagingAsync());
         staging.IsEnabled = CanApplyToStaging();
         var openStaging = PrimaryButton("Open staging folder", AccentBlue, (_, _) => SetStatus("Staging folder can be opened after staging is complete."));
         openStaging.IsEnabled = HasReached(WorkflowState.Staged);
@@ -345,9 +781,9 @@ public sealed partial class MainWindow : Window
 
         if (!HasReached(WorkflowState.Staged))
         {
-            var locked = PrimaryButton("Confirm game apply locked", Brush("#243141"), (_, _) => SetStatus("Apply to staging first, then confirm game apply."));
+            var locked = PrimaryButton("Game apply locked", Brush("#243141"), (_, _) => SetStatus("Apply to staging first. Game apply is not wired in 6E."));
             locked.IsEnabled = false;
-            stack.Children.Add(Spaced("Game apply stays locked until a staging manifest exists.", 13, Secondary));
+            stack.Children.Add(Spaced("Game apply stays locked until the staging flow is proven.", 13, Secondary));
             stack.Children.Add(ButtonRow(locked));
         }
         else if (HasReached(WorkflowState.RestoreAvailable))
@@ -359,20 +795,10 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            var confirm = PrimaryButton("Confirm game apply", AccentRed, (_, _) => { AdvanceState(WorkflowState.RestoreAvailable, "Game apply complete. Restore manifest is available."); ShowPage("Apply & Restore"); });
-            confirm.IsEnabled = gameApplyConfirmationChecked;
-            var checkbox = new CheckBox
-            {
-                Content = "I understand this writes staged files to the game folder",
-                Foreground = White,
-                IsChecked = gameApplyConfirmationChecked,
-                Margin = new Thickness(0, 14, 0, 12)
-            };
-            checkbox.Checked += (_, _) => { gameApplyConfirmationChecked = true; confirm.IsEnabled = true; SetStatus("Explicit confirmation received. Confirm game apply is unlocked."); };
-            checkbox.Unchecked += (_, _) => { gameApplyConfirmationChecked = false; confirm.IsEnabled = false; SetStatus("Confirm game apply is locked until the confirmation box is checked."); };
-            stack.Children.Add(Spaced("This action writes to the game folder. Confirm explicitly before the button unlocks.", 13, Secondary));
-            stack.Children.Add(checkbox);
-            stack.Children.Add(ButtonRow(confirm, PrimaryButton("View staging manifest", AccentBlue, (_, _) => SetStatus("Staging manifest is ready for inspection."))));
+            var confirm = PrimaryButton("Game apply locked", Brush("#2A1620"), (_, _) => SetStatus("Game apply is intentionally not wired in 6E."));
+            confirm.IsEnabled = false;
+            stack.Children.Add(Spaced("Staging is complete, but writing to the game folder remains locked in this milestone. Review the staging manifest first.", 13, Secondary));
+            stack.Children.Add(ButtonRow(confirm, PrimaryButton("View staging manifest", AccentBlue, (_, _) => SetStatus(StagingManifestStatus()))));
         }
 
         var panel = Panel(stack);
@@ -397,19 +823,108 @@ public sealed partial class MainWindow : Window
                 PrimaryButton("Check Python Sidecar", AccentBlue, (_, _) => SetStatus("Python sidecar idle. No Python process was launched at startup.")))));
     }
 
-    private UIElement FamilyButtons()
+    private UIElement ProfilePicker()
     {
-        return ButtonRow(
-            WizardButton("REFramework", true, (_, _) => SelectFamily("REFramework")),
-            WizardButton("Unreal ~mods", true, (_, _) => SelectFamily("Unreal Mods")),
-            WizardButton("Godot / STS2", true, (_, _) => SelectFamily("Godot / STS2")));
+        if (profileOptions.Count == 0)
+        {
+            return ButtonRow(WizardButton("Load profiles", !isBusy, async (_, _) => await EnsureProfilesLoadedAsync(force: true)));
+        }
+
+        var chosen = SelectedProfileOption() ?? profileOptions[0];
+        var combo = new ComboBox
+        {
+            MinWidth = 280,
+            MaxWidth = 320,
+            PlaceholderText = "Select game profile",
+            IsEnabled = !isBusy,
+            Background = Brush("#111D2A"),
+            Foreground = White
+        };
+
+        foreach (var option in profileOptions)
+        {
+            var item = new ComboBoxItem
+            {
+                Content = ProfilePickerLabel(option),
+                Tag = option
+            };
+            combo.Items.Add(item);
+            if (string.Equals(option.Id, selectedProfileId, StringComparison.OrdinalIgnoreCase))
+            {
+                combo.SelectedItem = item;
+                chosen = option;
+            }
+        }
+
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (combo.SelectedItem is ComboBoxItem { Tag: ProfileOption option })
+            {
+                chosen = option;
+            }
+        };
+
+        var detail = Spaced(ProfileDetail(chosen), 12, Secondary);
+        var use = WizardButton(HasReached(WorkflowState.ModFamilyChosen) ? "Use profile" : "Use selected", !isBusy, (_, _) => SelectProfile(chosen));
+        var refresh = WizardButton(profilesLoaded ? "Refresh" : "Load catalog", !isBusy, async (_, _) => await EnsureProfilesLoadedAsync(force: true));
+
+        return Stack(combo, detail, ButtonRow(use, refresh));
     }
 
-    private void SelectFamily(string family)
+    private void SelectProfile(ProfileOption option)
     {
-        selectedFamily = family;
-        AdvanceState(WorkflowState.ModFamilyChosen, family + " workflow selected. Choose the game folder next.");
+        selectedFamily = option.DisplayName;
+        selectedProfileId = option.Id;
+        currentProject = null;
+        ResetCoreResults();
+        selectedGameFolder = "";
+        selectedModsFolder = "";
+        workflowState = WorkflowState.NoProject;
+        AdvanceState(WorkflowState.ModFamilyChosen, option.DisplayName + " profile selected. Choose the game folder next.");
         ShowPage("Guided Setup");
+    }
+
+    private ProfileOption? SelectedProfileOption()
+    {
+        return profileOptions.FirstOrDefault(option => string.Equals(option.Id, selectedProfileId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string ProfileStepDetail()
+    {
+        if (HasReached(WorkflowState.ModFamilyChosen))
+        {
+            return $"{selectedFamily} ({selectedProfileId})";
+        }
+        return profilesLoaded
+            ? "Searchable catalog loaded from Python profiles. Pick one profile before choosing folders."
+            : "Profile catalog loads on this user action. No scan or file write starts here.";
+    }
+
+    private void SeedFallbackProfiles()
+    {
+        profileOptions.Clear();
+        profileOptions.AddRange(new[]
+        {
+            new ProfileOption("mhw-reframework", "Monster Hunter Wilds / REFramework NativePC Workflow", "reframework", "Built-in profile for REFramework and nativePC package roots.", "builtin", 2, false),
+            new ProfileOption("stellar-blade.experimental", "Stellar Blade / CNS Experimental", "unreal", "Experimental profile for Unreal archive sidecars, CNS JSON sidecars, and UE4SS runtime paths.", "builtin", 6, true),
+            new ProfileOption("sts2-mods", "Slay the Spire 2 Mods Folder", "godot", "Built-in profile for standalone PCK files and loose STS2 mod folders.", "builtin", 3, false),
+            new ProfileOption("unreal-pak", "Unreal PAK ~mods Workflow", "unreal", "Generic Unreal archive-as-is profile for Content/Paks/~mods.", "builtin", 7, false),
+            new ProfileOption("generic-folder", "Generic Folder Game", "generic", "Direct relative-path mapping for simple folder-based games.", "builtin", 1, false)
+        });
+    }
+
+    private static string ProfilePickerLabel(ProfileOption option)
+    {
+        var marker = option.IsExperimental ? "Experimental" : option.TrustLevel == "custom" ? "Custom" : "Built-in";
+        return $"{option.DisplayName}  [{marker}]";
+    }
+
+    private static string ProfileDetail(ProfileOption option)
+    {
+        var family = string.IsNullOrWhiteSpace(option.Family) ? "profile" : option.Family;
+        var marker = option.IsExperimental ? "Experimental" : option.TrustLevel == "custom" ? "Custom" : "Built-in";
+        var description = string.IsNullOrWhiteSpace(option.Description) ? option.Id : option.Description;
+        return $"{marker} · {family} · {option.RuleCount} rules · {description}";
     }
 
     private UIElement CompactWizardStep(int number, string title, string detail, UIElement action, WorkflowState completeState, WorkflowState unlockState)
@@ -521,10 +1036,10 @@ public sealed partial class MainWindow : Window
             return Panel(stack);
         }
 
-        stack.Children.Add(ManifestRow("staging-latest", "Staging", "Created by staging", "Tracks files copied into the staging folder."));
+        stack.Children.Add(ManifestRow(stagingManifest?.ManifestId ?? "staging-latest", "Staging", "Created by staging", StagingManifestStatus()));
         if (!HasReached(WorkflowState.RestoreAvailable))
         {
-            stack.Children.Add(ManifestRow("game-apply", "Game", "Locked until confirmation", "Confirm game apply to create the game restore manifest."));
+            stack.Children.Add(ManifestRow("game-apply", "Game", "Locked in 6E", "Game-folder writes are intentionally not wired in this milestone."));
             return Panel(stack);
         }
 
@@ -535,12 +1050,12 @@ public sealed partial class MainWindow : Window
     private UIElement ProjectSummaryPanel()
     {
         return Panel(Stack(
-            Text(HasReached(WorkflowState.ProjectOpened) ? "Wilds Project" : "No project open", 22, SemiBoldWeight, White),
+            Text(currentProject?.Name ?? (HasReached(WorkflowState.ProjectOpened) ? "Project draft" : "No project open"), 22, SemiBoldWeight, White),
             HasReached(WorkflowState.ProjectOpened)
-                ? PathLine("Project file", @"D:\ModForge\Projects\Wilds Project\project.mfproj")
+                ? PathLine("Project file", currentProject?.ProjectFile ?? "Save or open a project file before scanning")
                 : Spaced("Open a project to begin the safe workflow.", 12, Secondary),
             Line("Profile", HasReached(WorkflowState.ModFamilyChosen) ? selectedFamily : "Not selected", AccentBlue),
-            Line("Enabled mods", HasReached(WorkflowState.Scanned) ? "16 / 24" : "Scan required", HasReached(WorkflowState.Scanned) ? AccentGreen : Secondary),
+            Line("Enabled mods", HasReached(WorkflowState.Scanned) ? $"{mods.Count(item => item.Enabled)} / {mods.Count}" : "Scan required", HasReached(WorkflowState.Scanned) ? AccentGreen : Secondary),
             Line("Apply to game", GameWriteLabel(), HasReached(WorkflowState.RestoreAvailable) ? AccentGreen : HasReached(WorkflowState.Staged) ? AccentAmber : Secondary)));
     }
 
@@ -562,7 +1077,7 @@ public sealed partial class MainWindow : Window
         var steps = new[]
         {
             ("Project", WorkflowState.ProjectOpened),
-            ("Family", WorkflowState.ModFamilyChosen),
+            ("Profile", WorkflowState.ModFamilyChosen),
             ("Folders", WorkflowState.ModsFolderSelected),
             ("Scan", WorkflowState.Scanned),
             ("Review", WorkflowState.PlanReviewed),
@@ -580,7 +1095,31 @@ public sealed partial class MainWindow : Window
 
     private UIElement KpiRow()
     {
-        return ButtonRow(Kpi("Total Mods", "24", AccentBlue), Kpi("Enabled", "16", AccentGreen), Kpi("Conflicts", "5", AccentRed), Kpi("Warnings", "3", AccentAmber));
+        return ButtonRow(
+            Kpi("Total Mods", mods.Count.ToString(), AccentBlue),
+            Kpi("Enabled", mods.Count(item => item.Enabled).ToString(), AccentGreen),
+            Kpi("Conflicts", conflicts.Count.ToString(), conflicts.Count > 0 ? AccentRed : AccentGreen),
+            Kpi("Warnings", warnings.Count.ToString(), warnings.Count > 0 ? AccentAmber : AccentGreen));
+    }
+
+    private static ModRow ToModRow(CoreMod mod)
+    {
+        var safeAction = mod.Enabled
+            ? $"{mod.FileCount} files found. Create a plan to inspect destinations."
+            : "Disabled mods are excluded from the active plan.";
+        var destination = mod.Enabled ? mod.DestinationPreview : "Disabled in active profile";
+        return new ModRow(
+            mod.Id,
+            mod.Enabled,
+            mod.Priority,
+            mod.Name,
+            mod.Family,
+            mod.Source,
+            mod.Status,
+            mod.Warnings,
+            mod.Conflicts,
+            destination,
+            safeAction);
     }
 
     private UIElement ModListRow(ModRow mod)
@@ -598,7 +1137,34 @@ public sealed partial class MainWindow : Window
 
     private UIElement ConflictListRow(ConflictRow conflict)
     {
-        return RowGrid(new[] { ShortPath(conflict.Destination, 46), conflict.WinningMod, conflict.LosingMod, conflict.Risk }, AccentAmber);
+        var destination = Stack(
+            Text("Destination", 11, SemiBoldWeight, Secondary),
+            WrappedPathText(conflict.Destination));
+
+        var kept = Line("Currently kept", conflict.WinningMod, AccentGreen);
+        var overwritten = Line("Would overwrite", conflict.LosingMod == "-" ? "No losing mod detected" : conflict.LosingMod, conflict.LosingMod == "-" ? Secondary : AccentRed);
+        var participants = Spaced("Mods in this conflict: " + string.Join(", ", conflict.Participants), 12, Secondary);
+        var risk = Spaced("Risk: " + conflict.Risk, 12, AccentAmber);
+        var sourceStack = Stack(Text("Conflicting source files", 12, SemiBoldWeight, Secondary));
+        foreach (var source in conflict.Sources)
+        {
+            var marker = string.Equals(source.ModName, conflict.WinningMod, StringComparison.OrdinalIgnoreCase) ? "kept" : "overwritten";
+            sourceStack.Children.Add(Spaced($"{source.ModName} ({marker}, priority {source.Priority})", 12, marker == "kept" ? AccentGreen : AccentRed));
+            sourceStack.Children.Add(WrappedPathText(source.SourcePath));
+        }
+
+        var preferWinner = PrimaryButton("Prefer current winner", AccentGreen, async (_, _) => await PreferConflictWinnerAsync(conflict, conflict.WinningMod));
+        var preferOverwritten = PrimaryButton("Prefer overwritten mod", AccentAmber, async (_, _) => await PreferConflictWinnerAsync(conflict, conflict.LosingMod));
+        preferOverwritten.IsEnabled = conflict.LosingMod != "-";
+
+        return Panel(Stack(
+            destination,
+            kept,
+            overwritten,
+            participants,
+            risk,
+            sourceStack,
+            ButtonRow(preferWinner, preferOverwritten)), "#0F1721", "#243141");
     }
 
     private UIElement ToolRow(string name, string state, string detail)
@@ -621,7 +1187,7 @@ public sealed partial class MainWindow : Window
             Spaced(mod.SafeAction, 13, White),
             ButtonRow(
                 PrimaryButton("View conflicts", AccentAmber, (_, _) => ShowPage("Plan")),
-                PrimaryButton("Disable mod", Secondary, (_, _) => SetStatus("Disable will be wired to the sidecar after scan integration."))));
+                PrimaryButton(mod.Enabled ? "Disable mod" : "Enable mod", mod.Enabled ? AccentAmber : AccentGreen, async (_, _) => await SetModEnabledAsync(mod, !mod.Enabled))));
     }
 
     private UIElement HeaderRow(IReadOnlyList<string> labels)
@@ -659,9 +1225,15 @@ public sealed partial class MainWindow : Window
     {
         var stack = Stack();
         stack.Children.Add(Text(title, 20, SemiBoldWeight, White));
+        var any = false;
         foreach (var line in lines)
         {
+            any = true;
             stack.Children.Add(Spaced("- " + line, 13, Secondary));
+        }
+        if (!any)
+        {
+            stack.Children.Add(Spaced(title == "Warnings" ? "No warnings in the latest dry-run plan." : "Nothing to show yet.", 13, Secondary));
         }
         return Panel(stack);
     }
@@ -836,6 +1408,16 @@ public sealed partial class MainWindow : Window
         };
     }
 
+    private TextBlock WrappedPathText(string value)
+    {
+        var text = PathText(value);
+        text.TextWrapping = TextWrapping.Wrap;
+        text.TextTrimming = TextTrimming.None;
+        text.Foreground = White;
+        text.Margin = new Thickness(0, 4, 0, 0);
+        return text;
+    }
+
     private TextBlock Spaced(string value, double size, Brush brush)
     {
         var text = Text(value, size, NormalWeight, brush);
@@ -855,26 +1437,100 @@ public sealed partial class MainWindow : Window
 
     private bool HasReached(WorkflowState state) => workflowState >= state;
 
-    private bool CanScan() => HasReached(WorkflowState.ModsFolderSelected);
+    private bool CanScan() => currentProject != null && HasReached(WorkflowState.ModsFolderSelected) && !isBusy;
 
-    private bool CanCreatePlan() => HasReached(WorkflowState.Scanned);
+    private bool CanCreatePlan() => currentProject != null && HasReached(WorkflowState.Scanned) && !isBusy;
 
     private bool IsCurrentStep(WorkflowState completeState, WorkflowState unlockState) => !HasReached(completeState) && HasReached(unlockState);
 
-    private bool CanApplyToStaging() => planReviewManuallyChecked && HasReached(WorkflowState.PlanReviewed) && !HasReached(WorkflowState.Staged);
+    private bool CanApplyToStaging() => currentProject != null && planReviewManuallyChecked && HasReached(WorkflowState.PlanReviewed) && !HasReached(WorkflowState.Staged) && !isBusy;
 
     private string StagingActionLabel() => HasReached(WorkflowState.Staged) ? "Staging complete" : CanApplyToStaging() ? "Apply to staging" : "Apply to staging locked";
 
     private string GameWriteLabel()
     {
         if (HasReached(WorkflowState.RestoreAvailable)) return "Manifest available";
-        if (HasReached(WorkflowState.Staged)) return "Confirmation required";
+        if (HasReached(WorkflowState.Staged)) return "Locked in 6E";
         return "Locked";
     }
 
     private string StepStateText(string label, WorkflowState state)
     {
         return label + ": " + (HasReached(state) ? "complete" : "required");
+    }
+
+    private string CurrentProjectLine()
+    {
+        return currentProject == null ? "Project: required" : "Project: " + currentProject.Name;
+    }
+
+    private string StagingManifestStatus()
+    {
+        if (stagingManifest == null)
+        {
+            return "Staging manifest is not available yet.";
+        }
+
+        return $"{stagingManifest.Copied} copied, {stagingManifest.Overwritten} overwritten, {stagingManifest.Skipped} skipped at {stagingManifest.TargetRoot}";
+    }
+
+    private void ResetCoreResults()
+    {
+        mods.Clear();
+        conflicts.Clear();
+        warnings.Clear();
+        currentPlan = null;
+        stagingManifest = null;
+        planReviewManuallyChecked = false;
+    }
+
+    private void ApplyConflictCountsToMods()
+    {
+        if (mods.Count == 0)
+        {
+            return;
+        }
+
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var conflict in conflicts)
+        {
+            counts[conflict.WinningMod] = counts.TryGetValue(conflict.WinningMod, out var winningCount) ? winningCount + 1 : 1;
+            if (conflict.LosingMod != "-")
+            {
+                counts[conflict.LosingMod] = counts.TryGetValue(conflict.LosingMod, out var losingCount) ? losingCount + 1 : 1;
+            }
+        }
+
+        for (var i = 0; i < mods.Count; i++)
+        {
+            var count = counts.TryGetValue(mods[i].Name, out var value) ? value : 0;
+            mods[i] = mods[i] with
+            {
+                Conflicts = count,
+                Destination = !mods[i].Enabled
+                    ? "Disabled in active profile"
+                    : count > 0
+                        ? "Review conflict list in Plan"
+                        : "No destination conflict in latest plan",
+                SafeAction = !mods[i].Enabled
+                    ? "Disabled mods are excluded from the active plan."
+                    : count > 0
+                        ? "Review conflict winner before staging."
+                        : "Ready for staging after review."
+            };
+        }
+    }
+
+    private static string SuggestedProjectName(string gameFolder)
+    {
+        if (string.IsNullOrWhiteSpace(gameFolder))
+        {
+            return "ModForge Project";
+        }
+
+        var trimmed = Path.GetFullPath(gameFolder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var name = Path.GetFileName(trimmed);
+        return string.IsNullOrWhiteSpace(name) ? "ModForge Project" : name;
     }
 
     private static string ShortPath(string path, int maxLength)
@@ -902,7 +1558,7 @@ public sealed partial class MainWindow : Window
         {
             WorkflowState.NoProject => "No project",
             WorkflowState.ProjectOpened => "Project opened",
-            WorkflowState.ModFamilyChosen => "Mod family chosen",
+            WorkflowState.ModFamilyChosen => "Game profile chosen",
             WorkflowState.GameFolderSelected => "Game folder selected",
             WorkflowState.ModsFolderSelected => "Mods folder selected",
             WorkflowState.Scanned => "Scan complete",
@@ -920,14 +1576,14 @@ public sealed partial class MainWindow : Window
         return workflowState switch
         {
             WorkflowState.NoProject => "Open a project or start Guided Setup.",
-            WorkflowState.ProjectOpened => "Choose a mod family.",
+            WorkflowState.ProjectOpened => "Choose a game profile.",
             WorkflowState.ModFamilyChosen => "Choose the game folder.",
             WorkflowState.GameFolderSelected => "Choose the mods folder.",
             WorkflowState.ModsFolderSelected => "Scan mods.",
             WorkflowState.Scanned => "Create and review the plan.",
             WorkflowState.PlanReady => "Review conflicts and warnings.",
             WorkflowState.PlanReviewed => "Apply to staging.",
-            WorkflowState.Staged => "Open Apply & Restore and confirm game apply.",
+            WorkflowState.Staged => "Review the staging manifest. Game apply is locked in 6E.",
             WorkflowState.RestoreAvailable => "Preview restore or inspect the latest manifest.",
             _ => "Preview restore or inspect the manifest."
         };
@@ -1038,55 +1694,25 @@ public sealed partial class MainWindow : Window
 
     private void UpdateShell()
     {
-        SafetyChip.Text = "Safe mode: Dry-run first | No startup scan | Python idle";
+        SafetyChip.Text = isBusy
+            ? "Safe mode: Dry-run first | Python running on user action"
+            : "Safe mode: Dry-run first | No startup scan | Python idle";
         StateChip.Text = "State: " + WorkflowLabel();
         StatusText.Text = WorkflowLabel() + " - " + (string.IsNullOrWhiteSpace(statusMessage) ? GetNextAction() : statusMessage);
 
+        OpenProjectButton.IsEnabled = !isBusy;
         ScanButton.IsEnabled = CanScan();
         PlanButton.IsEnabled = CanCreatePlan();
-        ApplyButton.IsEnabled = HasReached(WorkflowState.Staged);
+        ApplyButton.IsEnabled = HasReached(WorkflowState.Staged) && !isBusy;
         ApplyButton.Content = HasReached(WorkflowState.RestoreAvailable)
             ? "Preview restore"
             : HasReached(WorkflowState.Staged)
-                ? "Open game confirm"
+                ? "View staging result"
                 : "Apply to game locked";
 
         NavMods.Opacity = CanScan() || activePage == "Mods" ? 1.0 : 0.58;
         NavPlan.Opacity = CanCreatePlan() || activePage == "Plan" ? 1.0 : 0.58;
         NavApply.Opacity = HasReached(WorkflowState.PlanReady) || activePage == "Apply & Restore" ? 1.0 : 0.58;
-    }
-
-    private static List<ModRow> CreateMods()
-    {
-        return new List<ModRow>
-        {
-            new(true, 1, "Better UI", "REFramework", @"Mods\BetterUI", "OK", 0, 1, @"reframework\data\ui\betterui.lua", "Review conflict in Plan before staging."),
-            new(true, 2, "Weapon Texture Pack", "Unreal Pak", "WeaponTX_Pack.zip", "OK", 1, 2, @"Content\Paks\~mods\WeaponTX_Pack.pak", "Keep archive intact and stage first."),
-            new(true, 3, "REFramework Loader", "REFramework", @"Mods\REFramework", "OK", 0, 0, @"reframework\d2d\reframework.dll", "Ready for staging."),
-            new(true, 4, "Unreal HD HUD", "Unreal Pak", "HDHUD_v2.zip", "Warn", 1, 1, @"Content\Paks\~mods\HDHUD_v2.pak", "Check warning before staging."),
-            new(false, 5, "Monster Weakness Icon", "REFramework", @"Mods\WeaknessIcon", "Disabled", 0, 0, @"reframework\data\ui\icons.dds", "Enable only after conflict review."),
-            new(true, 6, "STS2 Localization EN", "Godot PCK", "Localization_EN.pck", "OK", 0, 0, @"mods\Localization_EN.pck", "Ready for staging.")
-        };
-    }
-
-    private static List<ConflictRow> CreateConflicts()
-    {
-        return new List<ConflictRow>
-        {
-            new(@"reframework\data\ui\betterui.lua", "Better UI", "Monster Weakness Icon", "Destination overwrite"),
-            new(@"Content\Paks\~mods\WeaponTX_Pack.pak", "Weapon Texture Pack", "HD Monster Textures", "Archive destination"),
-            new(@"reframework\data\ui\config.ini", "Better UI", "Unreal HD HUD", "Case-insensitive path match")
-        };
-    }
-
-    private static List<string> CreateWarnings()
-    {
-        return new List<string>
-        {
-            "WeaponTX_Pack.zip has no preview image. This does not block staging.",
-            "HDHUD_v2.zip duplicates one destination already used by another mod.",
-            "Unreal sidecar archives must be restored as a set."
-        };
     }
 
     private static SolidColorBrush Brush(string hex)
@@ -1131,9 +1757,37 @@ public sealed partial class MainWindow : Window
         RestoreAvailable = 10
     }
 
-    private sealed record ModRow(bool Enabled, int Priority, string Name, string Family, string Source, string Status, int Warnings, int Conflicts, string Destination, string SafeAction);
+    private sealed record ModRow(string Id, bool Enabled, int Priority, string Name, string Family, string Source, string Status, int Warnings, int Conflicts, string Destination, string SafeAction);
 
-    private sealed record ConflictRow(string Destination, string WinningMod, string LosingMod, string Risk);
+    private sealed record ProfileOption(
+        string Id,
+        string DisplayName,
+        string Family,
+        string Description,
+        string TrustLevel,
+        int RuleCount,
+        bool IsExperimental)
+    {
+        public static ProfileOption FromCore(CoreGameProfile profile)
+        {
+            return new ProfileOption(
+                profile.Id,
+                profile.DisplayName,
+                profile.Family,
+                profile.Description,
+                profile.TrustLevel,
+                profile.RuleCount,
+                profile.IsExperimental);
+        }
+    }
+
+    private sealed record ConflictRow(
+        string Destination,
+        string WinningMod,
+        string LosingMod,
+        string Risk,
+        IReadOnlyList<string> Participants,
+        IReadOnlyList<CoreConflictSource> Sources);
 
     private sealed class WindowSettings
     {
