@@ -40,6 +40,16 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("modforge 0.1.0", completed.stdout)
 
+    def test_windows_smoke_scripts_exist(self) -> None:
+        for name in [
+            "dev_setup.ps1",
+            "run_tests.ps1",
+            "smoke_cli.ps1",
+            "smoke_gui_import.ps1",
+            "release_smoke.ps1",
+        ]:
+            self.assertTrue((ROOT / "scripts" / name).exists(), name)
+
 
 if __name__ == "__main__":
     unittest.main()

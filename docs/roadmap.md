@@ -34,6 +34,16 @@
 - Restore preview and stricter restore safety gates. Done.
 - Monster Hunter Wilds REFramework/nativePC fixture coverage. Done.
 
+## Phase 4
+
+- MVP release-candidate hardening. Done.
+- Manifest browser and restore center. Done.
+- Project portability and audit. Done.
+- REFramework/nativePC certification. Done.
+- Unreal PAK/UCAS/UTOC certification. Done.
+- Godot/Slay the Spire 2 PCK certification. Done.
+- Windows smoke scripts. Done.
+
 ## Deferred
 
 - Nexus Mods login or downloads.

@@ -19,6 +19,18 @@ under the staging directory.
 
 ## Built-In Profiles
 
+## Certified Core Mod Families
+
+The MVP release-candidate support contract is documented in
+`docs/core-mod-family-support.md`. The certified profile families are:
+
+- REFramework/nativePC: `reframework`, `mhw-reframework`.
+- Unreal `~mods`: `unreal-pak`.
+- Godot/Slay the Spire 2: `godot-pck`, `sts2-mods`.
+
+Other built-in profiles are useful templates, but they are not part of the MVP
+certification baseline yet.
+
 - `generic-folder`: direct relative-path mapping.
 - `mo2-mod`: Mod Organizer 2 style loose mod folders, ignoring `meta.ini`,
   `INI Tweaks/**`, and `.mohidden/**`.

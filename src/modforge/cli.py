@@ -10,8 +10,15 @@ from modforge import __version__
 from modforge.core.deployer import apply_to_game, apply_to_staging, preview_restore_manifest, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan, summarize_deployment_plan
 from modforge.core.game_profile import builtin_profiles
+from modforge.core.manifest_browser import (
+    find_manifest,
+    latest_manifest_summary,
+    list_manifest_summaries,
+    summarize_manifest,
+)
 from modforge.core.mod_package import scan_project_mods
 from modforge.core.mod_project import ModProject
+from modforge.core.project_portability import audit_project, export_project, import_project
 from modforge.doctor import format_doctor_report, run_doctor
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import check_tools
@@ -42,14 +49,32 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     init.set_defaults(handler=handle_project_init)
 
+    project_export = project_subcommands.add_parser("export", help="Export project metadata only")
+    project_export.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    project_export.add_argument("--out", required=True, type=Path)
+    project_export.add_argument("--no-manifests", action="store_true")
+    project_export.set_defaults(handler=handle_project_export)
+
+    project_import = project_subcommands.add_parser("import", help="Import a project metadata export")
+    project_import.add_argument("export_file", type=Path)
+    project_import.add_argument("--target", required=True, type=Path)
+    project_import.add_argument("--project-file-name", default="modforge.project.json")
+    project_import.set_defaults(handler=handle_project_import)
+
+    project_audit = project_subcommands.add_parser("audit", help="Audit project portability and health")
+    project_audit.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    project_audit.add_argument("--json", action="store_true")
+    project_audit.set_defaults(handler=handle_project_audit)
+
     profiles = subcommands.add_parser("profiles", help="List built-in game profiles")
     profiles.add_argument("--json", action="store_true")
     profiles.set_defaults(handler=handle_profiles)
 
     doctor = subcommands.add_parser("doctor", help="Run runtime and project smoke checks")
-    doctor.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    doctor.add_argument("--project-file", "--project", type=Path, default=DEFAULT_PROJECT_FILE)
     doctor.add_argument("--json", action="store_true")
     doctor.add_argument("--strict", action="store_true", help="Treat warnings as failures")
+    doctor.add_argument("--health-report", type=Path, help="Write a Markdown health report")
     doctor.set_defaults(handler=handle_doctor)
 
     scan = subcommands.add_parser("scan-mods", help="Scan the configured mods directory")
@@ -67,6 +92,24 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     report.add_argument("--output", type=Path, default=Path(".modforge/conflict-report.md"))
     report.set_defaults(handler=handle_report)
+
+    manifests = subcommands.add_parser("manifests", help="Inspect game apply manifests")
+    manifest_subcommands = manifests.add_subparsers(required=True)
+    manifest_list = manifest_subcommands.add_parser("list", help="List project manifests")
+    manifest_list.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    manifest_list.add_argument("--json", action="store_true")
+    manifest_list.set_defaults(handler=handle_manifests_list)
+
+    manifest_latest = manifest_subcommands.add_parser("latest", help="Show the latest project manifest")
+    manifest_latest.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    manifest_latest.add_argument("--json", action="store_true")
+    manifest_latest.set_defaults(handler=handle_manifests_latest)
+
+    manifest_show = manifest_subcommands.add_parser("show", help="Show one project manifest")
+    manifest_show.add_argument("manifest")
+    manifest_show.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    manifest_show.add_argument("--json", action="store_true")
+    manifest_show.set_defaults(handler=handle_manifests_show)
 
     profile = subcommands.add_parser("profile", help="Manage enabled mods and priorities")
     profile_subcommands = profile.add_subparsers(required=True)
@@ -141,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply_game.set_defaults(handler=handle_apply_game)
 
     restore = subcommands.add_parser("restore", help="Restore a game apply manifest")
+    restore.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     restore.add_argument("--manifest", required=True, type=Path)
     restore.add_argument("--path", action="append", dest="paths", help="Restore only this destination path")
     restore.add_argument("--preview", action="store_true", help="Show restore actions without writing files")
@@ -177,6 +221,31 @@ def handle_project_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_project_export(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    payload = export_project(project, args.out, include_manifests=not args.no_manifests)
+    print(f"Wrote project export: {args.out}")
+    print("Includes manifests: yes" if payload["includes"]["manifests"] else "Includes manifests: no")
+    print("Game files, mod archives, and backup binaries were not included.")
+    return 0
+
+
+def handle_project_import(args: argparse.Namespace) -> int:
+    import_project(args.export_file, args.target, args.project_file_name)
+    print(f"Imported project to {args.target / args.project_file_name}")
+    return 0
+
+
+def handle_project_audit(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    report = audit_project(project)
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_project_audit(report.to_dict()))
+    return 1 if report.has_errors else 0
+
+
 def handle_profiles(args: argparse.Namespace) -> int:
     profiles = builtin_profiles()
     if args.json:
@@ -189,10 +258,14 @@ def handle_profiles(args: argparse.Namespace) -> int:
 
 def handle_doctor(args: argparse.Namespace) -> int:
     report = run_doctor(args.project_file)
+    formatted = format_doctor_report(report)
     if args.json:
         print(json.dumps(report.to_dict(), indent=2))
     else:
-        print(format_doctor_report(report))
+        print(formatted)
+    if args.health_report:
+        args.health_report.parent.mkdir(parents=True, exist_ok=True)
+        args.health_report.write_text(formatted, encoding="utf-8")
     return report.exit_code(strict=args.strict)
 
 
@@ -230,6 +303,41 @@ def handle_report(args: argparse.Namespace) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(render_deployment_report(project, plan), encoding="utf-8")
     print(f"Wrote {args.output}")
+    return 0
+
+
+def handle_manifests_list(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    summaries = list_manifest_summaries(project)
+    if args.json:
+        print(json.dumps([summary.to_dict() for summary in summaries], indent=2))
+    else:
+        for summary in summaries:
+            state = "restorable" if summary.can_restore else "blocked"
+            print(f"{summary.manifest_id} {summary.target:7} {state:10} {summary.applied_at}")
+    return 0
+
+
+def handle_manifests_latest(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    summary = latest_manifest_summary(project)
+    if summary is None:
+        print("No manifests found.")
+        return 1
+    if args.json:
+        print(json.dumps(summary.to_dict(), indent=2))
+    else:
+        print(format_manifest_summary(summary.to_dict()))
+    return 0
+
+
+def handle_manifests_show(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    summary = summarize_manifest(find_manifest(project, args.manifest))
+    if args.json:
+        print(json.dumps(summary.to_dict(), indent=2))
+    else:
+        print(format_manifest_summary(summary.to_dict()))
     return 0
 
 
@@ -367,8 +475,9 @@ def handle_apply_game(args: argparse.Namespace) -> int:
 
 
 def handle_restore(args: argparse.Namespace) -> int:
+    manifest_path = _resolve_manifest_arg(args.project_file, args.manifest)
     if args.preview:
-        preview = preview_restore_manifest(args.manifest, args.paths)
+        preview = preview_restore_manifest(manifest_path, args.paths)
         if args.json:
             print(json.dumps(preview.to_dict(), indent=2))
         else:
@@ -379,7 +488,7 @@ def handle_restore(args: argparse.Namespace) -> int:
         print("Refusing to restore without --yes.")
         return 2
 
-    manifest = restore_manifest(args.manifest, args.paths)
+    manifest = restore_manifest(manifest_path, args.paths)
     if args.json:
         print(json.dumps(manifest.to_dict(), indent=2))
     else:
@@ -414,6 +523,33 @@ def format_plan_summary(summary: dict[str, object]) -> str:
     )
 
 
+def format_manifest_summary(summary: dict[str, object]) -> str:
+    lines = [
+        f"Manifest: {summary['manifest_id']}",
+        f"Target: {summary['target']}",
+        f"Target root: {summary['target_root']}",
+        f"Applied: {summary['applied_at']}",
+        f"Restored: {summary['restored_at'] or '-'}",
+        f"Copied: {summary['copied']}",
+        f"Overwritten: {summary['overwritten']}",
+        f"Skipped: {summary['skipped']}",
+        f"Backups: {summary['backups']}",
+        f"Restorable records: {summary['restorable']}",
+        f"Can restore: {'yes' if summary['can_restore'] else 'no'}",
+        f"Path: {summary['path']}",
+    ]
+    for warning in summary.get("warnings", []):
+        lines.append(f"WARNING: {warning}")
+    return "\n".join(lines)
+
+
+def format_project_audit(report: dict[str, object]) -> str:
+    lines = [f"Project audit: {report['project_name']}"]
+    for issue in report["issues"]:
+        lines.append(f"{issue['status'].upper():7} {issue['name']}: {issue['message']}")
+    return "\n".join(lines)
+
+
 def format_restore_preview(preview: dict[str, object]) -> str:
     records = preview.get("records", [])
     warnings = preview.get("warnings", [])
@@ -436,6 +572,13 @@ def format_restore_preview(preview: dict[str, object]) -> str:
         if record.get("warning"):
             lines.append(f"  WARNING: {record['warning']}")
     return "\n".join(lines)
+
+
+def _resolve_manifest_arg(project_file: Path, manifest_arg: Path) -> Path:
+    if manifest_arg.exists():
+        return manifest_arg
+    project = ModProject.load(project_file)
+    return find_manifest(project, str(manifest_arg))
 
 
 if __name__ == "__main__":

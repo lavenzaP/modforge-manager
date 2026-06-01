@@ -11,6 +11,10 @@ This milestone stays local and synthetic-fixture friendly. It does not add Nexus
 downloads, encrypted archive support, arbitrary asset editing, installers, or
 translation repacking.
 
+Milestone 4 builds on this workflow with an MVP release-candidate support
+contract for REFramework/nativePC, Unreal PAK/UCAS/UTOC, and Godot/Slay the
+Spire 2 PCK mod families.
+
 ## Happy Path
 
 1. Run `doctor` before creating a project. Missing project files are warnings,

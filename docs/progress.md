@@ -142,3 +142,19 @@
 - Updated the tkinter GUI restore path to preview and block unsafe restores.
 - Added `docs/guided-workflow-v1.md`.
 - Expanded tests from 44 to 54 stdlib `unittest` cases.
+
+## MVP RC Hardening And Core Mod Families
+
+- Re-consulted ChatGPT through Whale/CS WebLatch after the guided workflow
+  foundation.
+- Updated the Milestone 4 scope to MVP release-candidate hardening plus three
+  certified core mod families: REFramework/nativePC, Unreal PAK/UCAS/UTOC, and
+  Godot/Slay the Spire 2 PCK workflows.
+- Added manifest browser helpers and CLI `manifests list/latest/show`.
+- Added project metadata export/import/audit helpers and CLI commands.
+- Added doctor audit output and health report writing.
+- Added tkinter project health output.
+- Added synthetic certification fixtures for the three core mod families.
+- Added Windows PowerShell smoke scripts under `scripts/`.
+- Added MVP RC, core mod family, project portability, and Windows smoke docs.
+- Expanded tests from 54 to 66 stdlib `unittest` cases.

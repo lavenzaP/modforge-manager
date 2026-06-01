@@ -228,6 +228,81 @@ class CliTests(unittest.TestCase):
             self.assertEqual(conflict_file.read_text(encoding="utf-8"), "original sword model")
             self.assertTrue(json.loads(manifest_path.read_text(encoding="utf-8"))["restored_at"])
 
+    def test_cli_manifest_browser_and_project_portability_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            mods = root / "mods"
+            project_file = root / "modforge.project.json"
+            export_file = root / "export.json"
+            import_dir = root / "imported"
+            (mods / "Patch").mkdir(parents=True)
+            game.mkdir()
+            (mods / "Patch" / "new.txt").write_text("new", encoding="utf-8")
+
+            self.assertEqual(
+                self.run_cli(
+                    [
+                        "project",
+                        "init",
+                        "--name",
+                        "Portable",
+                        "--game-root",
+                        str(game),
+                        "--mods-dir",
+                        str(mods),
+                        "--project-file",
+                        str(project_file),
+                    ]
+                )[0],
+                0,
+            )
+            self.assertEqual(self.run_cli(["apply-game", "--project-file", str(project_file), "--yes"])[0], 0)
+
+            code, output = self.run_cli(["manifests", "list", "--project-file", str(project_file), "--json"])
+            self.assertEqual(code, 0)
+            manifest_list = json.loads(output)
+            self.assertEqual(len(manifest_list), 1)
+            manifest_id = manifest_list[0]["manifest_id"]
+            self.assertTrue(manifest_list[0]["can_restore"])
+
+            self.assertEqual(
+                self.run_cli(["manifests", "latest", "--project-file", str(project_file), "--json"])[0],
+                0,
+            )
+            code, output = self.run_cli(
+                ["manifests", "show", manifest_id[:8], "--project-file", str(project_file), "--json"]
+            )
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(output)["manifest_id"], manifest_id)
+
+            self.assertEqual(
+                self.run_cli(["project", "audit", "--project-file", str(project_file), "--json"])[0],
+                0,
+            )
+            self.assertEqual(
+                self.run_cli(
+                    [
+                        "project",
+                        "export",
+                        "--project-file",
+                        str(project_file),
+                        "--out",
+                        str(export_file),
+                    ]
+                )[0],
+                0,
+            )
+            export_payload = json.loads(export_file.read_text(encoding="utf-8"))
+            self.assertFalse(export_payload["includes"]["game_files"])
+            self.assertFalse(export_payload["includes"]["mod_files"])
+            self.assertFalse(export_payload["includes"]["backup_files"])
+            self.assertEqual(
+                self.run_cli(["project", "import", str(export_file), "--target", str(import_dir)])[0],
+                0,
+            )
+            self.assertTrue((import_dir / "modforge.project.json").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

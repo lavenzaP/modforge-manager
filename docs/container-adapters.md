@@ -10,6 +10,12 @@ Initial adapters:
 - `godot_pck`: detected; supported when `godot_pck_tool` is configured.
 - `unreal_pak`: detected; supported when `unreal_pak` is configured.
 
+For MVP certification, Godot PCK and Unreal archive packages also support an
+archive-as-is deployment path when the external extractor is not configured.
+Extractor-backed scans are used for inspection and translation workspaces, while
+archive-as-is scans keep installation workflows usable for `.pck`, `.pak`,
+`.ucas`, and `.utoc` files.
+
 Adapters must fail safely and should not mutate source packages.
 
 ZIP safety rules:
@@ -42,3 +48,7 @@ If a plain UnrealPak path is configured, ModForge calls:
 For Godot PCK tools with different command-line syntax, prefer the explicit
 template form so the archive and output directory are unambiguous. Failed or
 empty extraction creates warnings and does not write to the game folder.
+
+Unreal sidecar sets are checked at scan time. A `.pak/.ucas/.utoc` set with a
+missing sidecar produces a warning, but ModForge still treats archive files as
+normal manifest-tracked deployment files.

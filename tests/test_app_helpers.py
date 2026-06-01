@@ -72,6 +72,34 @@ class AppHelperTests(unittest.TestCase):
         self.assertIn("Will delete newly copied files: 1", summary)
         self.assertIn("WARNING: Backup is missing", summary)
 
+    def test_project_health_summary_includes_audit_and_manifest_state(self) -> None:
+        summary = ModForgeApp.project_health_summary(
+            {
+                "project_name": "Demo",
+                "issues": [
+                    {
+                        "name": "mods-dir",
+                        "status": "error",
+                        "message": "Directory is unavailable",
+                    }
+                ],
+            },
+            [
+                {
+                    "manifest_id": "abc",
+                    "target": "game",
+                    "can_restore": False,
+                    "restorable": 2,
+                    "warnings": ["Backup is missing"],
+                }
+            ],
+        )
+
+        self.assertIn("Project health: Demo", summary)
+        self.assertIn("ERROR   mods-dir", summary)
+        self.assertIn("abc (game, blocked, records=2)", summary)
+        self.assertIn("WARNING: Backup is missing", summary)
+
     def test_sorted_packages_supports_table_columns(self) -> None:
         packages = [
             ModPackage("b", "Beta", Path("Beta"), True, 10, "zip", [ModFile("b.txt", 1)], ["warn"]),

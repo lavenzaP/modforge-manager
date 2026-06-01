@@ -52,6 +52,10 @@ class ModProject:
     @classmethod
     def load(cls, path: Path) -> "ModProject":
         payload = json.loads(path.read_text(encoding="utf-8"))
+        return cls.load_dict(payload)
+
+    @classmethod
+    def load_dict(cls, payload: dict[str, object]) -> "ModProject":
         return cls(
             name=str(payload["name"]),
             game_root=normalize_path(payload["game_root"]),

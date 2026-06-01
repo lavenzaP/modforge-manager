@@ -115,6 +115,33 @@ class DoctorTests(unittest.TestCase):
             self.assertEqual(checks["python"]["status"], "ok")
             self.assertEqual(checks["project-file"]["status"], "warning")
 
+    def test_doctor_includes_project_audit_and_health_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            mods = root / "mods"
+            project_file = root / "modforge.project.json"
+            health_report = root / "health.md"
+            game.mkdir()
+            project = ModProject.create("Demo", game, mods, root / ".modforge" / "staging")
+            project.save(project_file)
+
+            output = StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    [
+                        "doctor",
+                        "--project-file",
+                        str(project_file),
+                        "--health-report",
+                        str(health_report),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("audit:mods-dir", output.getvalue())
+            self.assertTrue(health_report.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

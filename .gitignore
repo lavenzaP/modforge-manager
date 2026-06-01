@@ -31,3 +31,7 @@ modforge.project.json
 *.exe
 *.mdmp
 *.dmp
+
+# Synthetic test fixtures may use engine-like extensions.
+!tests/fixtures/**/*.pak
+!tests/fixtures/**/*.pck

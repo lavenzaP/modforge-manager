@@ -10,6 +10,7 @@ from modforge import __version__
 from modforge.core.game_profile import builtin_profiles
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
+from modforge.core.project_portability import audit_project
 from modforge.core.user_profile import normalize_profile_id
 from modforge.tools.checker import check_tools
 
@@ -112,6 +113,7 @@ def _check_project(project_path: Path) -> list[DoctorCheck]:
         DoctorCheck("project-file", "ok", f"Loaded project {project.name}."),
         _check_directory("game-root", project.game_root, required=False),
         mods_dir_check,
+        _check_directory("staging-dir", project.staging_dir, required=False),
         _check_active_user_profile(project),
     ]
     checks.extend(_check_tool_paths(project))
@@ -125,6 +127,7 @@ def _check_project(project_path: Path) -> list[DoctorCheck]:
                 f"Skipped because mods directory is unavailable: {project.mods_dir}",
             )
         )
+    checks.extend(_audit_checks(project))
     return checks
 
 
@@ -166,3 +169,12 @@ def _check_scan(project: ModProject) -> DoctorCheck:
     if warnings:
         message += f"; {warnings} package warnings"
     return DoctorCheck("scan", "ok", message)
+
+
+def _audit_checks(project: ModProject) -> list[DoctorCheck]:
+    report = audit_project(project)
+    return [
+        DoctorCheck(f"audit:{issue.name}", issue.status, issue.message)
+        for issue in report.issues
+        if issue.status != "ok"
+    ]

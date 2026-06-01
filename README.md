@@ -32,6 +32,23 @@ tool checks, and fake-fixture-tested core behavior.
 - Configure and check external tool paths from the GUI.
 - Sort GUI mod tables, inspect scan warnings, and see progress/status updates
   during longer operations.
+- Inspect manifests from the CLI, preview restores, and audit/export/import
+  project metadata without copying real game or mod payloads.
+- Run Windows smoke scripts for release-candidate checks.
+
+## MVP RC Target
+
+The MVP release-candidate baseline certifies three core mod families:
+
+- REFramework/nativePC mods, including Monster Hunter Wilds style layouts.
+- Unreal `~mods` archive mods, including `.pak`, `.ucas`, and `.utoc` files.
+- Godot/Slay the Spire 2 mods-folder workflows, including `.pck` files.
+
+"Perfect support" for this MVP means safe local scan, plan, conflict report,
+staging apply, game apply, manifest inspection, restore preview, restore,
+doctor/audit checks, and documentation for synthetic fixtures in those families.
+It does not mean Nexus downloads, encrypted PAK support, archive repacking,
+arbitrary asset editing, a virtual filesystem, or installer generation.
 
 ## Quick Start
 
@@ -81,9 +98,13 @@ python -m modforge tools set unreal_pak "C:\Tools\UnrealPak.exe {archive} -Extra
 python -m modforge doctor
 python -m modforge apply-staging --yes
 python -m modforge apply-game --yes
+python -m modforge manifests list
+python -m modforge manifests latest
 python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --preview
 python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --yes
 python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --path config\settings.json --yes
+python -m modforge project audit
+python -m modforge project export --out .modforge\project-export.json
 python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
 ```
 
@@ -141,13 +162,18 @@ modforge-gui-qt modforge.project.json
 
 Built-in profile ids:
 
-- `generic-folder`
-- `mo2-mod`
-- `godot-pck`
-- `unreal-pak`
-- `sts2-mods`
+Certified core profiles:
+
 - `reframework`
 - `mhw-reframework`
+- `unreal-pak`
+- `godot-pck`
+- `sts2-mods`
+
+Additional templates:
+
+- `generic-folder`
+- `mo2-mod`
 - `unity-bepinex`
 - `unity-melonloader`
 - `bethesda-data`
@@ -158,6 +184,7 @@ Run tests with stdlib only:
 ```powershell
 python -m unittest discover -s tests
 python -m modforge doctor --project-file modforge.project.json
+.\scripts\release_smoke.ps1
 ```
 
 Optional dev tooling after installing extras:

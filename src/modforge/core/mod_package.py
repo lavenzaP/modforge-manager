@@ -78,6 +78,7 @@ def scan_mods(
         extracted_path: Path | None = None
         if detected.container_type == "loose_folder":
             files = _scan_loose_files(item)
+            warnings.extend(_loose_unreal_sidecar_warnings(files))
         elif detected.container_type == "zip" and detected.supported:
             file_entries, zip_warnings = zip_adapter.list_files(item)
             files = [
@@ -86,22 +87,30 @@ def scan_mods(
             ]
             warnings.extend(zip_warnings)
         elif detected.container_type in external_archive.TOOL_IDS:
-            result = external_archive.extract_archive(
-                item,
-                detected.container_type,
-                external_tools or {},
-                extraction_dir,
-            )
-            files = [
-                ModFile(relative_path=relative_path, size=size)
-                for relative_path, size in result.files
-            ]
-            extracted_path = result.extracted_path
-            warnings.extend(result.warnings)
+            if _has_external_tool(detected.container_type, external_tools or {}):
+                result = external_archive.extract_archive(
+                    item,
+                    detected.container_type,
+                    external_tools or {},
+                    extraction_dir,
+                )
+                files = [
+                    ModFile(relative_path=relative_path, size=size)
+                    for relative_path, size in result.files
+                ]
+                extracted_path = result.extracted_path
+                warnings.extend(result.warnings)
+            else:
+                files = [ModFile(relative_path=item.name, size=item.stat().st_size)]
+                warnings.append(
+                    f"No external tool configured for {detected.container_type}: "
+                    f"{external_archive.TOOL_IDS[detected.container_type]}; deploying archive as-is."
+                )
         else:
             files = []
         if detected.supported is False and not files:
             warnings.append(f"{detected.container_type} detection is present, extraction is deferred.")
+        warnings.extend(_family_warnings(item, detected.container_type))
         packages.append(
             ModPackage(
                 id=item.stem.lower().replace(" ", "-"),
@@ -120,6 +129,57 @@ def scan_mods(
             )
         )
     return packages
+
+
+def _family_warnings(path: Path, container_type: str) -> list[str]:
+    if container_type == "unreal_pak":
+        return _unreal_sidecar_warnings(path)
+    return []
+
+
+def _unreal_sidecar_warnings(path: Path) -> list[str]:
+    suffix = path.suffix.lower()
+    if suffix not in {".pak", ".ucas", ".utoc"}:
+        return []
+    if suffix == ".pak" and not path.with_suffix(".ucas").exists() and not path.with_suffix(".utoc").exists():
+        return []
+    base = path.with_suffix("")
+    siblings = {suffix: base.with_suffix(suffix).exists() for suffix in [".pak", ".ucas", ".utoc"]}
+    present = [suffix for suffix, exists in siblings.items() if exists]
+    if len(present) == 1 and path.suffix.lower() == ".pak":
+        return []
+    missing = [suffix for suffix, exists in siblings.items() if not exists]
+    if missing:
+        return [
+            f"Unreal sidecar set is incomplete for {base.name}: missing {', '.join(missing)}"
+        ]
+    return []
+
+
+def _loose_unreal_sidecar_warnings(files: list[ModFile]) -> list[str]:
+    groups: dict[str, set[str]] = {}
+    for mod_file in files:
+        path = Path(mod_file.relative_path)
+        suffix = path.suffix.lower()
+        if suffix not in {".pak", ".ucas", ".utoc"}:
+            continue
+        groups.setdefault(str(path.with_suffix("")).replace("\\", "/"), set()).add(suffix)
+
+    warnings: list[str] = []
+    for base, suffixes in sorted(groups.items()):
+        if suffixes == {".pak"}:
+            continue
+        missing = [suffix for suffix in [".pak", ".ucas", ".utoc"] if suffix not in suffixes]
+        if missing:
+            warnings.append(
+                f"Unreal sidecar set is incomplete for {Path(base).name}: missing {', '.join(missing)}"
+            )
+    return warnings
+
+
+def _has_external_tool(container_type: str, external_tools: dict[str, str]) -> bool:
+    tool_id = external_archive.TOOL_IDS.get(container_type)
+    return bool(tool_id and external_tools.get(tool_id, "").strip())
 
 
 def _scan_loose_files(mod_root: Path) -> list[ModFile]:

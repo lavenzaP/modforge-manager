@@ -281,6 +281,9 @@ def _write_operation_source(package: ModPackage, relative_path: str, destination
     if package.detected_type == "loose_folder":
         shutil.copy2(package.path / relative_path, destination)
         return
+    if package.detected_type in {"godot_pck", "unreal_pak"} and package.extracted_path is None:
+        shutil.copy2(package.path, destination)
+        return
     if package.detected_type == "zip":
         destination.write_bytes(zip_adapter.read_file(package.path, relative_path))
         return

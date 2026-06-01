@@ -10,8 +10,10 @@ from modforge.core.deployer import apply_to_game, apply_to_staging, preview_rest
 from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.game_profile import builtin_profiles
 from modforge.core.manifest import InstallManifest
+from modforge.core.manifest_browser import list_manifest_summaries
 from modforge.core.mod_package import ModPackage, scan_project_mods
 from modforge.core.mod_project import ModProject
+from modforge.core.project_portability import audit_project
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import ToolCheck, check_tools
 from modforge.tools.registry import KNOWN_TOOLS
@@ -59,6 +61,7 @@ class ModForgeApp:
         ttk.Button(toolbar, text="Apply Staging", command=self.apply_staging).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Apply Game", command=self.apply_game).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Restore", command=self.restore).pack(side="left", padx=(8, 0))
+        ttk.Button(toolbar, text="Health", command=self.health).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Tools", command=self.configure_tools).pack(side="left", padx=(8, 0))
 
         self.project_info = tk.StringVar(value="No project loaded.")
@@ -304,6 +307,16 @@ class ModForgeApp:
             return
         self._stop_busy(f"Restored manifest {manifest.manifest_id}")
 
+    def health(self) -> None:
+        project = self._require_project()
+        if project is None:
+            return
+        audit = audit_project(project)
+        manifests = list_manifest_summaries(project)
+        self._write(self.project_health_summary(audit.to_dict(), [manifest.to_dict() for manifest in manifests]))
+        status = "Project has issues." if audit.has_errors or audit.has_warnings else "Project health is OK."
+        self.status.set(status)
+
     def configure_tools(self) -> None:
         project = self._require_project()
         if project is None:
@@ -452,6 +465,22 @@ class ModForgeApp:
             lines.append(f"WARNING: {warning}")
         for record in records:
             lines.append(f"- {record['destination_path']}: {record['action']}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def project_health_summary(audit: dict[str, object], manifests: list[dict[str, object]]) -> str:
+        lines = [f"Project health: {audit['project_name']}", ""]
+        for issue in audit["issues"]:
+            lines.append(f"{issue['status'].upper():7} {issue['name']}: {issue['message']}")
+        lines.extend(["", f"Manifests: {len(manifests)}"])
+        for manifest in manifests[:5]:
+            state = "restorable" if manifest.get("can_restore") else "blocked"
+            lines.append(
+                f"- {manifest.get('manifest_id')} ({manifest.get('target')}, {state}, "
+                f"records={manifest.get('restorable')})"
+            )
+            for warning in manifest.get("warnings", []):
+                lines.append(f"  WARNING: {warning}")
         return "\n".join(lines)
 
     @staticmethod

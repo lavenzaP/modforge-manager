@@ -123,9 +123,13 @@ def builtin_profiles() -> list[GameProfile]:
         GameProfile(
             id="sts2-mods",
             display_name="Slay the Spire 2 Mods Folder",
-            deployment_rules=[DeploymentRule(destination_root="mods")],
+            deployment_rules=[
+                DeploymentRule(source_pattern="*.pck", destination_root="mods"),
+                DeploymentRule(source_pattern="**/*.pck", destination_root="mods"),
+                DeploymentRule(destination_root="mods"),
+            ],
             ignored_patterns=["**/.DS_Store", "**/Thumbs.db"],
-            supported_containers=["loose_folder", "zip"],
+            supported_containers=["loose_folder", "zip", "godot_pck"],
         ),
         GameProfile(
             id="reframework",
