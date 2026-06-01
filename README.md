@@ -42,34 +42,47 @@ python -m pip install --upgrade pip
 pip install -e .
 ```
 
+Run the installed entrypoints:
+
+```powershell
+modforge doctor
+modforge profiles
+modforge-gui
+```
+
 Run the CLI directly from the source tree without installing:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m modforge.cli --help
-python -m modforge.cli profiles
+python -m modforge doctor
+python -m modforge --help
+python -m modforge profiles
 ```
+
+When no project file exists, `doctor` reports runtime checks plus a project-file
+warning. Add `--strict` when warnings should fail automation.
 
 Create a demo project:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m modforge.cli project init --name Demo --game-root tests\fixtures\fake_game --mods-dir tests\fixtures\fake_mods
-python -m modforge.cli project init --name STS2 --game-root C:\Games\STS2 --mods-dir C:\Games\STS2\mods --profile sts2-mods
-python -m modforge.cli scan-mods
-python -m modforge.cli plan
-python -m modforge.cli report --output .modforge\conflict-report.md
-python -m modforge.cli profile disable betterui
-python -m modforge.cli profile create boss-run --name "Boss Run" --copy-from default
-python -m modforge.cli profile switch boss-run
-python -m modforge.cli profile list
-python -m modforge.cli tools check
-python -m modforge.cli tools set unreal_pak "C:\Tools\UnrealPak.exe {archive} -Extract {output}"
-python -m modforge.cli apply-staging --yes
-python -m modforge.cli apply-game --yes
-python -m modforge.cli restore --manifest .modforge\manifests\<manifest-id>.json --yes
-python -m modforge.cli restore --manifest .modforge\manifests\<manifest-id>.json --path config\settings.json --yes
-python -m modforge.cli translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
+python -m modforge project init --name Demo --game-root tests\fixtures\fake_game --mods-dir tests\fixtures\fake_mods
+python -m modforge project init --name STS2 --game-root C:\Games\STS2 --mods-dir C:\Games\STS2\mods --profile sts2-mods
+python -m modforge scan-mods
+python -m modforge plan
+python -m modforge report --output .modforge\conflict-report.md
+python -m modforge profile disable betterui
+python -m modforge profile create boss-run --name "Boss Run" --copy-from default
+python -m modforge profile switch boss-run
+python -m modforge profile list
+python -m modforge tools check
+python -m modforge tools set unreal_pak "C:\Tools\UnrealPak.exe {archive} -Extract {output}"
+python -m modforge doctor
+python -m modforge apply-staging --yes
+python -m modforge apply-game --yes
+python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --yes
+python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --path config\settings.json --yes
+python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
 ```
 
 Run the lightweight GUI:
@@ -99,6 +112,7 @@ Run tests with stdlib only:
 
 ```powershell
 python -m unittest discover -s tests
+python -m modforge doctor --project-file modforge.project.json
 ```
 
 Optional dev tooling after installing extras:

@@ -24,6 +24,12 @@ User profiles are per-project mod sets. They store disabled mod ids and priority
 order separately from the selected game profile, so one project can keep
 multiple setups such as default, testing, translation, or boss-run loadouts.
 
+`modforge doctor` is the lightweight release smoke check. It validates the
+runtime, built-in profiles, and tkinter availability even before a project file
+exists. After a project loads, it also checks project paths, configured tool
+paths, and a non-mutating mod scan. It does not run external archive extractors
+unless a future command explicitly opts into that behavior.
+
 ## Data Flow
 
 ```mermaid

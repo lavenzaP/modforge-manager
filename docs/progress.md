@@ -103,3 +103,12 @@
 - Tool validation details now show the same OK/missing path information in the
   dialog as the output panel.
 - Expanded tests from 31 to 33 stdlib `unittest` cases.
+
+## Runtime Doctor And Entrypoints
+
+- Added `modforge doctor` for runtime, project-file, profile, tkinter, tool-path,
+  and safe scan smoke checks.
+- Added JSON and strict modes for automation-friendly diagnostics.
+- Added `python -m modforge` support and checks for packaged `modforge` and
+  `modforge-gui` script declarations.
+- Expanded tests from 33 to 40 stdlib `unittest` cases.

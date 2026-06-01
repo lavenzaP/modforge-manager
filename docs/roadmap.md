@@ -21,6 +21,7 @@
 - More game-specific profile templates. Done.
 - Real archive extraction for PCK/PAK through external tools. Done.
 - Real GUI tables, tool validation details, and progress surfaces. Done.
+- Runtime doctor, module entrypoint smoke test, and packaged script declarations. Done.
 - Synthetic fixture tests. Done.
 
 ## Phase 2

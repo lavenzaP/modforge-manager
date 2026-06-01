@@ -12,6 +12,7 @@ from modforge.core.deployment_plan import build_deployment_plan
 from modforge.core.game_profile import builtin_profiles
 from modforge.core.mod_package import scan_project_mods
 from modforge.core.mod_project import ModProject
+from modforge.doctor import format_doctor_report, run_doctor
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import check_tools
 from modforge.translation.exporter import extract_strings, write_entries_csv
@@ -44,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     profiles = subcommands.add_parser("profiles", help="List built-in game profiles")
     profiles.add_argument("--json", action="store_true")
     profiles.set_defaults(handler=handle_profiles)
+
+    doctor = subcommands.add_parser("doctor", help="Run runtime and project smoke checks")
+    doctor.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    doctor.add_argument("--json", action="store_true")
+    doctor.add_argument("--strict", action="store_true", help="Treat warnings as failures")
+    doctor.set_defaults(handler=handle_doctor)
 
     scan = subcommands.add_parser("scan-mods", help="Scan the configured mods directory")
     scan.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
@@ -176,6 +183,15 @@ def handle_profiles(args: argparse.Namespace) -> int:
         for profile in profiles:
             print(f"{profile.id:16} {profile.display_name}")
     return 0
+
+
+def handle_doctor(args: argparse.Namespace) -> int:
+    report = run_doctor(args.project_file)
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_doctor_report(report))
+    return report.exit_code(strict=args.strict)
 
 
 def handle_scan_mods(args: argparse.Namespace) -> int:
