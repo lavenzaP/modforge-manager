@@ -13,6 +13,8 @@ from modforge.core.mod_package import ModPackage, scan_project_mods
 from modforge.core.mod_project import ModProject
 from modforge.gui.models import create_mod_table_model
 from modforge.gui.qt_compat import PySide6Unavailable, load_qt_bindings, pyside6_status
+from modforge.gui.widgets import create_log_viewer, create_mod_table, create_project_label
+from modforge.gui.widgets import format_project_summary
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import ToolCheck, check_tools
 
@@ -53,17 +55,14 @@ class MainWindow:
 
         central = widgets.QWidget()
         layout = widgets.QVBoxLayout(central)
-        self.info_label = widgets.QLabel("No project loaded.")
+        self.info_label = create_project_label()
         layout.addWidget(self.info_label)
 
         splitter = widgets.QSplitter(core.Qt.Orientation.Vertical)
-        self.table = widgets.QTableView()
-        self.table.setSortingEnabled(True)
-        self.table.setAlternatingRowColors(True)
+        self.table = create_mod_table()
         splitter.addWidget(self.table)
 
-        self.output = widgets.QPlainTextEdit()
-        self.output.setReadOnly(True)
+        self.output = create_log_viewer()
         splitter.addWidget(self.output)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -201,13 +200,9 @@ class MainWindow:
 
     def refresh_project_info(self) -> None:
         if self.project is None:
-            self.info_label.setText("No project loaded.")
+            self.info_label.setText(format_project_summary(None))
             return
-        self.info_label.setText(
-            f"{self.project.name} | game: {self.project.game_root} | "
-            f"mods: {self.project.mods_dir} | profile: {self.project.game_profile.id} | "
-            f"user set: {self.project.active_profile().id}"
-        )
+        self.info_label.setText(format_project_summary(self.project))
 
     def _require_project(self) -> ModProject | None:
         if self.project is None:

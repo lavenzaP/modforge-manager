@@ -121,6 +121,8 @@
 - The Qt UI can load projects, scan mods, render plans, save reports, apply to
   staging/game with confirmation, and show external tool checks through the same
   core workflow functions as the CLI.
+- Added reusable Qt widget helpers for project summaries, mod tables, log output,
+  and conflict summaries.
 - Added dependency-check and model-helper tests that run even when PySide6 is
   not installed.
 - Expanded tests from 40 to 44 stdlib `unittest` cases.

@@ -1,4 +1,4 @@
-"""Godot PCK adapter stub."""
+"""Godot PCK detector."""
 
 from __future__ import annotations
 

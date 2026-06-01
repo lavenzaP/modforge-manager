@@ -1,4 +1,4 @@
-"""Unreal PAK adapter stub."""
+"""Unreal PAK detector."""
 
 from __future__ import annotations
 

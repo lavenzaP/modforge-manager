@@ -1,1 +1,1 @@
-"""Demo helpers for examples and future sample projects."""
+"""Demo helpers for examples and sample projects."""

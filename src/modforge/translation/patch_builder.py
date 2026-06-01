@@ -1,4 +1,4 @@
-"""Translation patch builder placeholder."""
+"""Translation patch summary helpers."""
 
 from __future__ import annotations
 

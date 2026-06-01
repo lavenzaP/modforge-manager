@@ -9,12 +9,14 @@ from bootstrap import ensure_src_path
 
 ensure_src_path()
 
+from modforge.core.conflict_detector import Conflict
 from modforge.core.manifest import InstallManifest, InstallRecord
 from modforge.core.mod_package import ModFile, ModPackage
 from modforge.core.mod_project import ModProject
 from modforge.gui import main_window
 from modforge.gui.models import build_mod_rows, create_mod_table_model
 from modforge.gui.qt_compat import pyside6_status
+from modforge.gui.widgets import format_conflicts, format_project_summary
 from modforge.tools.checker import ToolCheck
 
 
@@ -88,8 +90,13 @@ class QtGuiTests(unittest.TestCase):
         scan_summary = main_window.format_scan_summary(project, [package])
 
         self.assertIn("Demo (loose_folder, 1 files)", scan_summary)
+        self.assertIn("profile: generic-folder", format_project_summary(project))
         self.assertIn("MISSING unreal_pak", main_window.format_tool_checks(checks))
         self.assertIn("Backups: 1", main_window.format_manifest_summary(manifest))
+        self.assertIn(
+            "winner: Demo",
+            format_conflicts([Conflict("config.json", ["Base", "Demo"], "Demo")]),
+        )
 
 
 if __name__ == "__main__":
