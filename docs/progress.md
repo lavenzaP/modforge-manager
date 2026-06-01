@@ -57,3 +57,12 @@
   Tool, UnrealPak, and crash dump helpers.
 - GUI tool checks use the same warning-only core checker as the CLI.
 - Expanded tests from 20 to 21 stdlib `unittest` cases.
+
+## User Mod Sets
+
+- Added user profile management for multiple per-project mod sets.
+- CLI can list, create, clone, switch, and delete user profiles.
+- GUI can create, clone active, switch, and delete user profiles from a Profiles
+  dialog.
+- Active user profiles keep their own disabled mods and priority order.
+- Expanded tests from 21 to 22 stdlib `unittest` cases.

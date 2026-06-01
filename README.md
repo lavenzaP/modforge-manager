@@ -18,7 +18,8 @@ tool checks, and fake-fixture-tested core behavior.
 - Render a Markdown report.
 - Check configured external tool paths from the CLI or GUI without failing the
   workflow.
-- Enable/disable mods and set a profile priority order.
+- Create multiple user mod sets, switch between them, enable/disable mods, and
+  set priority order per set.
 - Copy winning files into a staging directory with an install manifest.
 - Extract basic JSON/CSV/TXT strings into a translation CSV.
 - Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
@@ -53,6 +54,9 @@ python -m modforge.cli scan-mods
 python -m modforge.cli plan
 python -m modforge.cli report --output .modforge\conflict-report.md
 python -m modforge.cli profile disable betterui
+python -m modforge.cli profile create boss-run --name "Boss Run" --copy-from default
+python -m modforge.cli profile switch boss-run
+python -m modforge.cli profile list
 python -m modforge.cli tools check
 python -m modforge.cli apply-staging --yes
 python -m modforge.cli apply-game --yes

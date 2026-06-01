@@ -8,7 +8,7 @@ from pathlib import Path
 
 from modforge.core.game_profile import GameProfile, builtin_profile
 from modforge.core.paths import normalize_path
-from modforge.core.user_profile import UserProfile
+from modforge.core.user_profile import UserProfile, normalize_profile_id
 
 
 @dataclass(slots=True)
@@ -58,7 +58,7 @@ class ModProject:
             mods_dir=normalize_path(payload["mods_dir"]),
             staging_dir=normalize_path(payload["staging_dir"]),
             game_profile=GameProfile.from_dict(payload["game_profile"]),
-            active_user_profile=str(payload.get("active_user_profile", "default")),
+            active_user_profile=normalize_profile_id(str(payload.get("active_user_profile", "default"))),
             user_profiles=[
                 UserProfile.from_dict(item)
                 for item in payload.get("user_profiles", [{"id": "default", "name": "Default"}])
@@ -70,11 +70,54 @@ class ModProject:
         path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
 
     def active_profile(self) -> UserProfile:
-        for profile in self.user_profiles:
-            if profile.id == self.active_user_profile:
-                return profile
-        profile = UserProfile(id=self.active_user_profile, name=self.active_user_profile)
+        profile = self.user_profile(self.active_user_profile)
+        if profile is not None:
+            self.active_user_profile = profile.id
+            return profile
+        profile = UserProfile(id=normalize_profile_id(self.active_user_profile), name=self.active_user_profile)
         self.user_profiles.append(profile)
+        return profile
+
+    def user_profile(self, profile_id: str) -> UserProfile | None:
+        normalized = normalize_profile_id(profile_id)
+        for profile in self.user_profiles:
+            if normalize_profile_id(profile.id) == normalized:
+                return profile
+        return None
+
+    def create_user_profile(self, profile_id: str, name: str | None = None, copy_from: str | None = None) -> UserProfile:
+        normalized = normalize_profile_id(profile_id)
+        if self.user_profile(normalized) is not None:
+            raise ValueError(f"User profile already exists: {normalized}")
+        if copy_from:
+            source = self.user_profile(copy_from)
+            if source is None:
+                raise ValueError(f"Cannot copy missing user profile: {copy_from}")
+            profile = source.clone_as(normalized, name or profile_id)
+        else:
+            profile = UserProfile(id=normalized, name=name or profile_id)
+        self.user_profiles.append(profile)
+        return profile
+
+    def switch_user_profile(self, profile_id: str) -> UserProfile:
+        profile = self.user_profile(profile_id)
+        if profile is None:
+            raise ValueError(f"Unknown user profile: {profile_id}")
+        self.active_user_profile = profile.id
+        return profile
+
+    def delete_user_profile(self, profile_id: str) -> UserProfile:
+        normalized = normalize_profile_id(profile_id)
+        if len(self.user_profiles) <= 1:
+            raise ValueError("Cannot delete the only user profile.")
+        profile = self.user_profile(normalized)
+        if profile is None:
+            raise ValueError(f"Unknown user profile: {profile_id}")
+        self.user_profiles = [
+            item for item in self.user_profiles if normalize_profile_id(item.id) != normalize_profile_id(profile.id)
+        ]
+        if normalize_profile_id(self.active_user_profile) == normalize_profile_id(profile.id):
+            self.active_user_profile = self.user_profiles[0].id
         return profile
 
     def set_mod_enabled(self, mod_id: str, enabled: bool) -> None:

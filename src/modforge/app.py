@@ -49,6 +49,7 @@ class ModForgeApp:
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Button(toolbar, text="New Project", command=self.new_project).pack(side="left")
         ttk.Button(toolbar, text="Open Project", command=self.open_project).pack(side="left")
+        ttk.Button(toolbar, text="Profiles", command=self.manage_profiles).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Scan", command=self.scan).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Plan", command=self.plan).pack(side="left", padx=(8, 0))
         ttk.Button(toolbar, text="Save Report", command=self.save_report).pack(side="left", padx=(8, 0))
@@ -267,6 +268,19 @@ class ModForgeApp:
         self._write(self.tool_checks_summary(checks))
         self.status.set("Saved external tool paths.")
 
+    def manage_profiles(self) -> None:
+        project = self._require_project()
+        if project is None:
+            return
+        dialog = UserProfileDialog(self.root, project)
+        changed = dialog.show()
+        if not changed:
+            return
+        self.save_project()
+        self.refresh_project_info()
+        self.scan()
+        self.status.set(f"Active user profile: {project.active_profile().name}")
+
     def set_selected_enabled(self, enabled: bool) -> None:
         project = self._require_project()
         if project is None:
@@ -304,7 +318,7 @@ class ModForgeApp:
         self.project_info.set(
             f"{self.project.name} | game: {self.project.game_root} | "
             f"mods: {self.project.mods_dir} | profile: {self.project.game_profile.id} | "
-            f"staging: {self.project.staging_dir}"
+            f"user set: {self.project.active_profile().id} | staging: {self.project.staging_dir}"
         )
 
     def refresh_mod_table(self) -> None:
@@ -456,6 +470,107 @@ class ToolSettingsDialog:
 
     def current_paths(self) -> dict[str, str]:
         return {tool_id: variable.get().strip() for tool_id, variable in self.variables.items()}
+
+
+class UserProfileDialog:
+    def __init__(self, parent: tk.Tk, project: ModProject) -> None:
+        self.project = project
+        self.changed = False
+        self.window = tk.Toplevel(parent)
+        self.window.title("User Profiles")
+        self.window.resizable(True, False)
+        self.window.transient(parent)
+
+        frame = ttk.Frame(self.window, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.window.columnconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+
+        self.listbox = tk.Listbox(frame, height=7, exportselection=False)
+        self.listbox.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+        ttk.Label(frame, text="Profile id").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.id_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.id_var).grid(row=2, column=0, columnspan=3, sticky="ew")
+
+        ttk.Label(frame, text="Display name").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.name_var = tk.StringVar()
+        ttk.Entry(frame, textvariable=self.name_var).grid(row=4, column=0, columnspan=3, sticky="ew")
+
+        controls = ttk.Frame(frame)
+        controls.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        ttk.Button(controls, text="Switch", command=self.switch).pack(side="left")
+        ttk.Button(controls, text="Create", command=lambda: self.create(copy_active=False)).pack(side="left", padx=(8, 0))
+        ttk.Button(controls, text="Clone Active", command=lambda: self.create(copy_active=True)).pack(
+            side="left",
+            padx=(8, 0),
+        )
+        ttk.Button(controls, text="Delete", command=self.delete).pack(side="left", padx=(8, 0))
+        ttk.Button(controls, text="Close", command=self.close).pack(side="right")
+
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+        self.refresh()
+
+    def show(self) -> bool:
+        self.window.grab_set()
+        self.window.wait_window()
+        return self.changed
+
+    def refresh(self) -> None:
+        self.listbox.delete(0, tk.END)
+        active_index = 0
+        for index, profile in enumerate(self.project.user_profiles):
+            marker = "*" if profile.id == self.project.active_user_profile else " "
+            self.listbox.insert(tk.END, f"{marker} {profile.id} - {profile.name}")
+            if profile.id == self.project.active_user_profile:
+                active_index = index
+        self.listbox.selection_set(active_index)
+
+    def selected_profile_id(self) -> str | None:
+        selected = self.listbox.curselection()
+        if not selected:
+            return None
+        return self.project.user_profiles[selected[0]].id
+
+    def switch(self) -> None:
+        profile_id = self.selected_profile_id()
+        if profile_id is None:
+            return
+        self.project.switch_user_profile(profile_id)
+        self.changed = True
+        self.refresh()
+
+    def create(self, copy_active: bool) -> None:
+        profile_id = self.id_var.get().strip()
+        if not profile_id:
+            messagebox.showinfo("ModForge Manager", "Enter a profile id first.")
+            return
+        copy_from = self.project.active_user_profile if copy_active else None
+        try:
+            profile = self.project.create_user_profile(profile_id, self.name_var.get().strip() or None, copy_from)
+        except ValueError as error:
+            messagebox.showerror("ModForge Manager", str(error))
+            return
+        self.project.switch_user_profile(profile.id)
+        self.changed = True
+        self.id_var.set("")
+        self.name_var.set("")
+        self.refresh()
+
+    def delete(self) -> None:
+        profile_id = self.selected_profile_id()
+        if profile_id is None:
+            return
+        try:
+            self.project.delete_user_profile(profile_id)
+        except ValueError as error:
+            messagebox.showerror("ModForge Manager", str(error))
+            return
+        self.changed = True
+        self.refresh()
+
+    def close(self) -> None:
+        self.window.destroy()
 
 
 if __name__ == "__main__":

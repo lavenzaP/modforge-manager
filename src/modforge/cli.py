@@ -62,10 +62,32 @@ def build_parser() -> argparse.ArgumentParser:
 
     profile = subcommands.add_parser("profile", help="Manage enabled mods and priorities")
     profile_subcommands = profile.add_subparsers(required=True)
+    profile_list = profile_subcommands.add_parser("list", help="List user mod-set profiles")
+    profile_list.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_list.add_argument("--json", action="store_true")
+    profile_list.set_defaults(handler=handle_profile_list)
+
     profile_show = profile_subcommands.add_parser("show", help="Show active profile")
     profile_show.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     profile_show.add_argument("--json", action="store_true")
     profile_show.set_defaults(handler=handle_profile_show)
+
+    profile_create = profile_subcommands.add_parser("create", help="Create a user mod-set profile")
+    profile_create.add_argument("profile_id")
+    profile_create.add_argument("--name")
+    profile_create.add_argument("--copy-from")
+    profile_create.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_create.set_defaults(handler=handle_profile_create)
+
+    profile_switch = profile_subcommands.add_parser("switch", help="Switch the active user profile")
+    profile_switch.add_argument("profile_id")
+    profile_switch.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_switch.set_defaults(handler=handle_profile_switch)
+
+    profile_delete = profile_subcommands.add_parser("delete", help="Delete a user mod-set profile")
+    profile_delete.add_argument("profile_id")
+    profile_delete.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    profile_delete.set_defaults(handler=handle_profile_delete)
 
     profile_enable = profile_subcommands.add_parser("enable", help="Enable a mod id")
     profile_enable.add_argument("mod_id")
@@ -189,6 +211,18 @@ def handle_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_profile_list(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    payload = [profile.to_dict() for profile in project.user_profiles]
+    if args.json:
+        print(json.dumps({"active_user_profile": project.active_user_profile, "profiles": payload}, indent=2))
+    else:
+        for profile in project.user_profiles:
+            marker = "*" if profile.id == project.active_user_profile else " "
+            print(f"{marker} {profile.id:16} {profile.name}")
+    return 0
+
+
 def handle_profile_show(args: argparse.Namespace) -> int:
     project = ModProject.load(args.project_file)
     profile = project.active_profile()
@@ -198,6 +232,31 @@ def handle_profile_show(args: argparse.Namespace) -> int:
         print(f"Active profile: {profile.name} ({profile.id})")
         print(f"Disabled mods: {', '.join(profile.disabled_mod_ids) or '-'}")
         print(f"Priority order: {', '.join(profile.mod_priority_order) or '-'}")
+    return 0
+
+
+def handle_profile_create(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    profile = project.create_user_profile(args.profile_id, name=args.name, copy_from=args.copy_from)
+    project.save(args.project_file)
+    copied = f" from {args.copy_from}" if args.copy_from else ""
+    print(f"Created profile {profile.id}{copied}")
+    return 0
+
+
+def handle_profile_switch(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    profile = project.switch_user_profile(args.profile_id)
+    project.save(args.project_file)
+    print(f"Switched to profile {profile.id}")
+    return 0
+
+
+def handle_profile_delete(args: argparse.Namespace) -> int:
+    project = ModProject.load(args.project_file)
+    profile = project.delete_user_profile(args.profile_id)
+    project.save(args.project_file)
+    print(f"Deleted profile {profile.id}")
     return 0
 
 

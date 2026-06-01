@@ -49,6 +49,26 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(main(["scan-mods", "--project-file", str(project_file), "--json"]), 0)
                 self.assertEqual(main(["plan", "--project-file", str(project_file), "--json"]), 0)
                 self.assertEqual(main(["profiles", "--json"]), 0)
+                self.assertEqual(main(["profile", "list", "--project-file", str(project_file), "--json"]), 0)
+                self.assertEqual(
+                    main(
+                        [
+                            "profile",
+                            "create",
+                            "Boss Run",
+                            "--name",
+                            "Boss Run",
+                            "--copy-from",
+                            "default",
+                            "--project-file",
+                            str(project_file),
+                        ]
+                    ),
+                    0,
+                )
+                self.assertEqual(main(["profile", "switch", "boss-run", "--project-file", str(project_file)]), 0)
+                self.assertEqual(main(["profile", "disable", "modone", "--project-file", str(project_file)]), 0)
+                self.assertEqual(main(["profile", "switch", "default", "--project-file", str(project_file)]), 0)
                 self.assertEqual(main(["tools", "check", "--project-file", str(project_file)]), 0)
                 self.assertEqual(
                     main(["translation", "extract", "--source", str(mods), "--output", str(output_csv)]),
@@ -68,6 +88,9 @@ class CliTests(unittest.TestCase):
             payload = json.loads(project_file.read_text(encoding="utf-8"))
             self.assertEqual(payload["name"], "Demo")
             self.assertEqual(payload["game_profile"]["id"], "mo2-mod")
+            self.assertEqual(payload["active_user_profile"], "default")
+            boss_profile = next(item for item in payload["user_profiles"] if item["id"] == "boss-run")
+            self.assertEqual(boss_profile["disabled_mod_ids"], ["modone"])
 
 
 if __name__ == "__main__":

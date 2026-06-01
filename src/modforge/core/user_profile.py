@@ -5,6 +5,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+def normalize_profile_id(value: str) -> str:
+    text = str(value).strip().casefold()
+    normalized: list[str] = []
+    last_separator = False
+    for character in text:
+        if character.isalnum():
+            normalized.append(character)
+            last_separator = False
+        elif character in "-_":
+            normalized.append(character)
+            last_separator = False
+        elif not last_separator:
+            normalized.append("-")
+            last_separator = True
+    profile_id = "".join(normalized).strip("-_")
+    if not profile_id:
+        raise ValueError("Profile id cannot be empty.")
+    return profile_id
+
+
 @dataclass(slots=True)
 class UserProfile:
     id: str = "default"
@@ -15,7 +35,7 @@ class UserProfile:
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> "UserProfile":
         return cls(
-            id=str(value.get("id", "default")),
+            id=normalize_profile_id(str(value.get("id", "default"))),
             name=str(value.get("name", "Default")),
             disabled_mod_ids=list(value.get("disabled_mod_ids", [])),  # type: ignore[arg-type]
             mod_priority_order=list(value.get("mod_priority_order", [])),  # type: ignore[arg-type]
@@ -41,6 +61,14 @@ class UserProfile:
             if mod_id and mod_id not in deduped:
                 deduped.append(mod_id)
         self.mod_priority_order = deduped
+
+    def clone_as(self, profile_id: str, name: str | None = None) -> "UserProfile":
+        return UserProfile(
+            id=normalize_profile_id(profile_id),
+            name=name or profile_id,
+            disabled_mod_ids=list(self.disabled_mod_ids),
+            mod_priority_order=list(self.mod_priority_order),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {

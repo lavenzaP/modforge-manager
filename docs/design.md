@@ -17,11 +17,16 @@ The current GUI is a lightweight `tkinter` shell. It should remain a thin caller
 of core functions: project creation/loading, mod scanning, profile edits,
 planning, staging/game apply, restore, and report saving.
 
+User profiles are per-project mod sets. They store disabled mod ids and priority
+order separately from the selected game profile, so one project can keep
+multiple setups such as default, testing, translation, or boss-run loadouts.
+
 ## Data Flow
 
 ```mermaid
 flowchart LR
   Project["Project File"] --> Scanner["Mod Scanner"]
+  UserProfiles["User Profiles"] --> Scanner
   Scanner --> Packages["Mod Packages"]
   Packages --> Planner["Deployment Planner"]
   Planner --> Conflicts["Conflict Detector"]
