@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from modforge.core.game_profile import GameProfile
+from modforge.core.game_profile import GameProfile, builtin_profile
 from modforge.core.paths import normalize_path
 from modforge.core.user_profile import UserProfile
 
@@ -29,13 +29,21 @@ class ModProject:
         game_root: str | Path,
         mods_dir: str | Path,
         staging_dir: str | Path,
+        game_profile: GameProfile | str | None = None,
     ) -> "ModProject":
+        profile = (
+            builtin_profile(game_profile)
+            if isinstance(game_profile, str)
+            else game_profile
+            if game_profile is not None
+            else GameProfile.generic()
+        )
         return cls(
             name=name,
             game_root=normalize_path(game_root),
             mods_dir=normalize_path(mods_dir),
             staging_dir=normalize_path(staging_dir),
-            game_profile=GameProfile.generic(),
+            game_profile=profile,
             active_user_profile="default",
             user_profiles=[UserProfile()],
             external_tools={},

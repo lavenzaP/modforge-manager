@@ -11,6 +11,7 @@ tool checks, and fake-fixture-tested core behavior.
 ## Current Scope
 
 - Create and load a modding project file.
+- Choose a built-in game profile template.
 - Scan loose mod folders and ZIP mod packages.
 - Detect destination conflicts between enabled mods.
 - Generate a dry-run deployment plan.
@@ -37,6 +38,7 @@ Run the CLI directly from the source tree without installing:
 ```powershell
 $env:PYTHONPATH = "src"
 python -m modforge.cli --help
+python -m modforge.cli profiles
 ```
 
 Create a demo project:
@@ -44,6 +46,7 @@ Create a demo project:
 ```powershell
 $env:PYTHONPATH = "src"
 python -m modforge.cli project init --name Demo --game-root tests\fixtures\fake_game --mods-dir tests\fixtures\fake_mods
+python -m modforge.cli project init --name STS2 --game-root C:\Games\STS2 --mods-dir C:\Games\STS2\mods --profile sts2-mods
 python -m modforge.cli scan-mods
 python -m modforge.cli plan
 python -m modforge.cli report --output .modforge\conflict-report.md
@@ -64,6 +67,15 @@ python -m modforge.app
 
 The GUI intentionally uses the Python standard library `tkinter` for the first
 usable version, so it can run before optional PySide6 work begins.
+
+Built-in profile ids:
+
+- `generic-folder`
+- `mo2-mod`
+- `godot-pck`
+- `unreal-pak`
+- `sts2-mods`
+- `reframework`
 
 Run tests with stdlib only:
 

@@ -40,3 +40,13 @@
 - GUI can plan, save reports, apply to staging, apply to game, and restore
   manifests through the same core functions used by the CLI.
 - Expanded tests from 15 to 16 stdlib `unittest` cases.
+
+## Built-In Game Profiles
+
+- Added built-in profiles for generic folders, MO2 mod folders, Godot PCK,
+  Unreal PAK, Slay the Spire 2 mods, and REFramework/nativePC style workflows.
+- Added `modforge profiles` and `project init --profile <id>`.
+- Deployment plans now honor profile `source_pattern`, `destination_root`,
+  `ignored_patterns`, and `supported_containers`.
+- GUI project creation prompts for a built-in profile id.
+- Expanded tests from 16 to 20 stdlib `unittest` cases.

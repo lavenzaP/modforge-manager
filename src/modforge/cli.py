@@ -9,6 +9,7 @@ from pathlib import Path
 from modforge import __version__
 from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.game_profile import builtin_profiles
 from modforge.core.mod_package import scan_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
@@ -36,8 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--game-root", required=True, type=Path)
     init.add_argument("--mods-dir", required=True, type=Path)
     init.add_argument("--staging-dir", type=Path, default=Path(".modforge/staging"))
+    init.add_argument("--profile", default="generic-folder", help="Built-in game profile id")
     init.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
     init.set_defaults(handler=handle_project_init)
+
+    profiles = subcommands.add_parser("profiles", help="List built-in game profiles")
+    profiles.add_argument("--json", action="store_true")
+    profiles.set_defaults(handler=handle_profiles)
 
     scan = subcommands.add_parser("scan-mods", help="Scan the configured mods directory")
     scan.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
@@ -132,9 +138,20 @@ def handle_project_init(args: argparse.Namespace) -> int:
         game_root=args.game_root,
         mods_dir=args.mods_dir,
         staging_dir=staging_dir,
+        game_profile=args.profile,
     )
     project.save(args.project_file)
     print(f"Created {args.project_file}")
+    return 0
+
+
+def handle_profiles(args: argparse.Namespace) -> int:
+    profiles = builtin_profiles()
+    if args.json:
+        print(json.dumps([profile.to_dict() for profile in profiles], indent=2))
+    else:
+        for profile in profiles:
+            print(f"{profile.id:16} {profile.display_name}")
     return 0
 
 

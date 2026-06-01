@@ -38,6 +38,8 @@ class CliTests(unittest.TestCase):
                             str(game),
                             "--mods-dir",
                             str(mods),
+                            "--profile",
+                            "mo2-mod",
                             "--project-file",
                             str(project_file),
                         ]
@@ -46,6 +48,7 @@ class CliTests(unittest.TestCase):
                 )
                 self.assertEqual(main(["scan-mods", "--project-file", str(project_file), "--json"]), 0)
                 self.assertEqual(main(["plan", "--project-file", str(project_file), "--json"]), 0)
+                self.assertEqual(main(["profiles", "--json"]), 0)
                 self.assertEqual(main(["tools", "check", "--project-file", str(project_file)]), 0)
                 self.assertEqual(
                     main(["translation", "extract", "--source", str(mods), "--output", str(output_csv)]),
@@ -62,7 +65,9 @@ class CliTests(unittest.TestCase):
                 )
 
             self.assertTrue(output_csv.exists())
-            self.assertEqual(json.loads(project_file.read_text(encoding="utf-8"))["name"], "Demo")
+            payload = json.loads(project_file.read_text(encoding="utf-8"))
+            self.assertEqual(payload["name"], "Demo")
+            self.assertEqual(payload["game_profile"]["id"], "mo2-mod")
 
 
 if __name__ == "__main__":

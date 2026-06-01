@@ -8,6 +8,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from modforge.core.deployer import apply_to_game, apply_to_staging, restore_manifest
 from modforge.core.deployment_plan import build_deployment_plan
+from modforge.core.game_profile import builtin_profiles
 from modforge.core.mod_package import ModPackage, scan_mods
 from modforge.core.mod_project import ModProject
 from modforge.reports.markdown import render_deployment_report
@@ -133,9 +134,21 @@ class ModForgeApp:
         )
         if not project_file:
             return
+        profile_ids = ", ".join(profile.id for profile in builtin_profiles())
+        profile_id = simpledialog.askstring(
+            "Game Profile",
+            f"Profile id ({profile_ids}):",
+            initialvalue="generic-folder",
+        )
+        if not profile_id:
+            return
         project_path = Path(project_file)
         staging_dir = project_path.resolve(strict=False).parent / ".modforge" / "staging"
-        self.project = ModProject.create(name, Path(game_root), Path(mods_dir), staging_dir)
+        try:
+            self.project = ModProject.create(name, Path(game_root), Path(mods_dir), staging_dir, profile_id)
+        except KeyError as error:
+            messagebox.showerror("ModForge Manager", str(error))
+            return
         self.project_path = project_path
         self.project.save(project_path)
         self.status.set(f"Created {project_path}")
@@ -272,7 +285,8 @@ class ModForgeApp:
             return
         self.project_info.set(
             f"{self.project.name} | game: {self.project.game_root} | "
-            f"mods: {self.project.mods_dir} | staging: {self.project.staging_dir}"
+            f"mods: {self.project.mods_dir} | profile: {self.project.game_profile.id} | "
+            f"staging: {self.project.staging_dir}"
         )
 
     def refresh_mod_table(self) -> None:

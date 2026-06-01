@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from fnmatch import fnmatchcase
 
 from modforge.core.conflict_detector import Conflict, detect_conflicts
+from modforge.core.game_profile import DeploymentRule
 from modforge.core.mod_package import ModPackage
 from modforge.core.mod_project import ModProject
 
@@ -47,14 +49,25 @@ def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> De
     operations: list[DeploymentOperation] = []
     conflict_entries: list[tuple[str, str, int]] = []
     warnings: list[str] = []
-    rule = project.game_profile.deployment_rules[0]
 
     for package in packages:
         warnings.extend(f"{package.name}: {warning}" for warning in package.warnings)
+        if package.detected_type not in project.game_profile.supported_containers:
+            warnings.append(
+                f"{package.name}: {package.detected_type} is not supported by "
+                f"{project.game_profile.display_name}."
+            )
+            continue
         if not package.enabled:
             continue
         for mod_file in package.files:
-            destination = rule.destination_for(package.path, package.path / mod_file.relative_path)
+            if _ignored(mod_file.relative_path, project.game_profile.ignored_patterns):
+                continue
+            rule = _rule_for(mod_file.relative_path, project.game_profile.deployment_rules)
+            if rule is None:
+                warnings.append(f"{package.name}: no deployment rule for {mod_file.relative_path}")
+                continue
+            destination = rule.destination_for_relative(mod_file.relative_path)
             operations.append(
                 DeploymentOperation(
                     source_mod=package.name,
@@ -70,3 +83,14 @@ def build_deployment_plan(project: ModProject, packages: list[ModPackage]) -> De
         conflicts=detect_conflicts(conflict_entries),
         warnings=warnings,
     )
+
+
+def _ignored(relative_path: str, patterns: list[str]) -> bool:
+    return any(fnmatchcase(relative_path, pattern) for pattern in patterns)
+
+
+def _rule_for(relative_path: str, rules: list[DeploymentRule]) -> DeploymentRule | None:
+    for rule in sorted(rules, key=lambda item: item.priority):
+        if rule.matches(relative_path):
+            return rule
+    return None

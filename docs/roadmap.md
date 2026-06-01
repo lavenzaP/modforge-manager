@@ -13,13 +13,15 @@
 - Game-root apply with backup manifest and restore. Done.
 - Basic translation extraction. Done.
 - Basic GUI project workflow. Done.
+- Built-in game profile templates. Done.
+- Profile-aware deployment rules and ignored patterns. Done.
 - Synthetic fixture tests. Done.
 
 ## Phase 2
 
 - Richer backup browser and selective restore UI.
 - User profiles and enabled mod sets.
-- More game profile templates.
+- More game-specific profile templates.
 - Real GUI tables and progress surfaces.
 - Optional PySide6 UI.
 - Real archive extraction for PCK/PAK through external tools.

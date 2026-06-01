@@ -6,7 +6,7 @@ from bootstrap import ensure_src_path
 
 ensure_src_path()
 
-from modforge.core.game_profile import DeploymentRule, GameProfile
+from modforge.core.game_profile import DeploymentRule, GameProfile, builtin_profile, builtin_profiles
 
 
 class GameProfileTests(unittest.TestCase):
@@ -20,6 +20,12 @@ class GameProfileTests(unittest.TestCase):
         rule = DeploymentRule(destination_root="Data")
 
         self.assertEqual(rule.to_dict()["destination_root"], "Data")
+
+    def test_builtin_profiles_are_addressable(self) -> None:
+        ids = [profile.id for profile in builtin_profiles()]
+
+        self.assertIn("generic-folder", ids)
+        self.assertEqual(builtin_profile("unreal-pak").display_name, "Unreal PAK ~mods Workflow")
 
 
 if __name__ == "__main__":
