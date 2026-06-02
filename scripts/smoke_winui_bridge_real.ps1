@@ -94,8 +94,23 @@ try {
     if ($Manifest.target -ne "staging") {
         throw "apply-staging returned unexpected target: $($Manifest.target)"
     }
+    if ($Manifest.records.Count -lt 1) {
+        throw "apply-staging returned no manifest records"
+    }
+    $TrimChars = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $ManifestTargetRoot = [System.IO.Path]::GetFullPath([string]$Manifest.target_root).TrimEnd($TrimChars)
+    $ExpectedStagingRoot = [System.IO.Path]::GetFullPath($StagingRoot).TrimEnd($TrimChars)
+    if (-not [string]::Equals($ManifestTargetRoot, $ExpectedStagingRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "apply-staging target_root escaped staging root: $($Manifest.target_root)"
+    }
     if (-not (Test-Path (Join-Path $StagingRoot ".modforge-install-manifest.json"))) {
         throw "staging manifest was not created"
+    }
+    if (Test-Path -LiteralPath (Join-Path $TempRoot ".modforge\manifests")) {
+        throw "apply-staging unexpectedly created game manifest directory"
+    }
+    if (Test-Path -LiteralPath (Join-Path $TempRoot ".modforge\backups")) {
+        throw "apply-staging unexpectedly created backup directory"
     }
     if ((Get-Content -LiteralPath $ConflictPath -Raw).Trim() -ne "original sword model") {
         throw "apply-staging changed the game folder"

@@ -246,18 +246,47 @@ internal sealed class PythonCoreService
 
     public async Task<CoreManifest> ApplyStagingAsync(string projectFile, CancellationToken cancellationToken = default)
     {
+        var project = await RunProjectCommandAsync(projectFile, cancellationToken);
         using var payload = await RunJsonAsync(
             new[] { "apply-staging", "--project-file", projectFile, "--yes", "--json" },
             cancellationToken);
         var root = payload.RootElement;
-        return new CoreManifest(
+        var manifest = new CoreManifest(
             ManifestId: GetString(root, "manifest_id"),
             Target: GetString(root, "target"),
             TargetRoot: GetString(root, "target_root"),
             AppliedAt: GetString(root, "applied_at"),
             Copied: GetArrayCount(root, "copied_files"),
             Overwritten: GetArrayCount(root, "overwritten_files"),
-            Skipped: GetArrayCount(root, "skipped_files"));
+            Skipped: GetArrayCount(root, "skipped_files"),
+            ManifestPath: Path.Combine(project.StagingDir, ".modforge-install-manifest.json"));
+        ValidateStagingManifest(project, manifest);
+        return manifest;
+    }
+
+    public async Task<CoreManifest> LoadStagingManifestAsync(string projectFile, CancellationToken cancellationToken = default)
+    {
+        var project = await RunProjectCommandAsync(projectFile, cancellationToken);
+        var manifestPath = Path.Combine(project.StagingDir, ".modforge-install-manifest.json");
+        if (!File.Exists(manifestPath))
+        {
+            throw new PythonCoreException("No staging manifest was found. Apply to staging first.");
+        }
+
+        var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+        using var payload = JsonDocument.Parse(json);
+        var root = payload.RootElement;
+        var manifest = new CoreManifest(
+            ManifestId: GetString(root, "manifest_id"),
+            Target: GetString(root, "target"),
+            TargetRoot: GetString(root, "target_root"),
+            AppliedAt: GetString(root, "applied_at"),
+            Copied: GetArrayCount(root, "copied_files"),
+            Overwritten: GetArrayCount(root, "overwritten_files"),
+            Skipped: GetArrayCount(root, "skipped_files"),
+            ManifestPath: manifestPath);
+        ValidateStagingManifest(project, manifest);
+        return manifest;
     }
 
     private async Task<CoreProject> RunProjectCommandAsync(string projectFile, CancellationToken cancellationToken)
@@ -425,6 +454,38 @@ internal sealed class PythonCoreService
             StringComparison.OrdinalIgnoreCase);
     }
 
+    private static void ValidateStagingManifest(CoreProject project, CoreManifest manifest)
+    {
+        if (!string.Equals(manifest.Target, "staging", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new PythonCoreException("Staging apply returned a non-staging manifest. The UI state was not advanced.");
+        }
+
+        if (!IsSameOrInside(project.StagingDir, manifest.TargetRoot))
+        {
+            throw new PythonCoreException("Staging apply returned a target outside the configured project staging folder.");
+        }
+
+        if (!IsSameOrInside(project.StagingDir, manifest.ManifestPath))
+        {
+            throw new PythonCoreException("Staging manifest path is outside the configured project staging folder.");
+        }
+    }
+
+    private static bool IsSameOrInside(string rootPath, string candidatePath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(candidatePath))
+        {
+            return false;
+        }
+
+        var root = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var candidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.Equals(root, candidate, StringComparison.OrdinalIgnoreCase)
+            || candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || candidate.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static int GetArrayCount(JsonElement element, string property)
     {
         return element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Array
@@ -521,4 +582,5 @@ internal sealed record CoreManifest(
     string AppliedAt,
     int Copied,
     int Overwritten,
-    int Skipped);
+    int Skipped,
+    string ManifestPath);

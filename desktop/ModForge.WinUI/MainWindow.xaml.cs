@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -80,7 +81,7 @@ public sealed partial class MainWindow : Window
         }
         else if (HasReached(WorkflowState.Staged))
         {
-            SetStatus("Game apply requires explicit confirmation in Apply & Restore.");
+            SetStatus("Staging is complete. View the staging manifest or open the staging folder.");
         }
         else
         {
@@ -444,6 +445,109 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private async Task ShowStagingManifestAsync()
+    {
+        var manifest = await EnsureStagingManifestAsync();
+        if (manifest == null)
+        {
+            return;
+        }
+
+        var details = string.Join(Environment.NewLine, new[]
+        {
+            $"Manifest id: {manifest.ManifestId}",
+            $"Target: {manifest.Target}",
+            $"Applied: {manifest.AppliedAt}",
+            $"Copied: {manifest.Copied}",
+            $"Overwritten: {manifest.Overwritten}",
+            $"Skipped: {manifest.Skipped}",
+            $"Target root: {manifest.TargetRoot}",
+            $"Manifest path: {manifest.ManifestPath}"
+        });
+        var body = new TextBlock
+        {
+            Text = details,
+            FontFamily = new FontFamily("Cascadia Mono"),
+            FontSize = 13,
+            Foreground = White,
+            TextWrapping = TextWrapping.Wrap
+        };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = ContentHost.XamlRoot,
+            Title = "Staging manifest",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 420,
+                Content = body
+            },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close
+        };
+        await dialog.ShowAsync();
+        SetStatus("Staging manifest displayed: " + manifest.ManifestId);
+    }
+
+    private async Task OpenStagingFolderAsync()
+    {
+        var manifest = await EnsureStagingManifestAsync();
+        if (manifest == null || currentProject == null)
+        {
+            return;
+        }
+
+        if (!Directory.Exists(currentProject.StagingDir))
+        {
+            SetStatus("Staging folder is missing. Apply to staging again.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = currentProject.StagingDir,
+                UseShellExecute = true
+            });
+            SetStatus("Opened staging folder: " + currentProject.StagingDir);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Could not open staging folder: " + ex.Message);
+        }
+    }
+
+    private async Task<CoreManifest?> EnsureStagingManifestAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before viewing staging results.");
+            return null;
+        }
+
+        if (!HasReached(WorkflowState.Staged))
+        {
+            SetStatus("Apply to staging before viewing the staging manifest.");
+            return null;
+        }
+
+        if (stagingManifest != null)
+        {
+            return stagingManifest;
+        }
+
+        try
+        {
+            stagingManifest = await pythonCore.LoadStagingManifestAsync(currentProject.ProjectFile);
+            return stagingManifest;
+        }
+        catch (PythonCoreException ex)
+        {
+            SetStatus(ex.Message);
+            return null;
+        }
+    }
+
     private async Task RunCoreActionAsync(string busyMessage, Func<Task> action)
     {
         if (isBusy)
@@ -777,12 +881,14 @@ public sealed partial class MainWindow : Window
 
         var staging = PrimaryButton(StagingActionLabel(), AccentGreen, async (_, _) => await ApplyStagingAsync());
         staging.IsEnabled = CanApplyToStaging();
-        var openStaging = PrimaryButton("Open staging folder", AccentBlue, (_, _) => SetStatus("Staging folder can be opened after staging is complete."));
-        openStaging.IsEnabled = HasReached(WorkflowState.Staged);
+        var viewStaging = PrimaryButton("View staging manifest", AccentBlue, async (_, _) => await ShowStagingManifestAsync());
+        viewStaging.IsEnabled = HasReached(WorkflowState.Staged) && !isBusy;
+        var openStaging = PrimaryButton("Open staging folder", AccentBlue, async (_, _) => await OpenStagingFolderAsync());
+        openStaging.IsEnabled = HasReached(WorkflowState.Staged) && !isBusy;
         left.Children.Add(Panel(Stack(
             Text("Staging actions", 22, SemiBoldWeight, White),
             Spaced("Staging writes to the configured staging folder first. It does not touch the game folder.", 13, Secondary),
-            ButtonRow(staging, openStaging))));
+            ButtonRow(staging, viewStaging, openStaging))));
 
         left.Children.Add(GameApplyPanel());
 
@@ -827,7 +933,7 @@ public sealed partial class MainWindow : Window
             var confirm = PrimaryButton("Game apply locked", Brush("#2A1620"), (_, _) => SetStatus("Game apply is locked for safety in this public preview."));
             confirm.IsEnabled = false;
             stack.Children.Add(Spaced("Staging is complete, but writing to the game folder remains locked in this public preview. Review the staging manifest first.", 13, Secondary));
-            stack.Children.Add(ButtonRow(confirm, PrimaryButton("View staging manifest", AccentBlue, (_, _) => SetStatus(StagingManifestStatus()))));
+            stack.Children.Add(ButtonRow(confirm, PrimaryButton("View staging manifest", AccentBlue, async (_, _) => await ShowStagingManifestAsync())));
         }
 
         var panel = Panel(stack);
@@ -1512,7 +1618,7 @@ public sealed partial class MainWindow : Window
             return "Staging manifest is not available yet.";
         }
 
-        return $"{stagingManifest.Copied} copied, {stagingManifest.Overwritten} overwritten, {stagingManifest.Skipped} skipped at {stagingManifest.TargetRoot}";
+        return $"{stagingManifest.Copied} copied, {stagingManifest.Overwritten} overwritten, {stagingManifest.Skipped} skipped at {stagingManifest.TargetRoot}. Manifest: {ShortPath(stagingManifest.ManifestPath, 90)}";
     }
 
     private void ResetCoreResults()
