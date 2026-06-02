@@ -21,7 +21,6 @@ namespace ModForge.App
         private string selectedFamily;
         private string statusMessage;
         private bool planReviewManuallyChecked;
-        private bool gameApplyConfirmationChecked;
 
         private Grid contentGrid;
         private TextBlock pageTitle;
@@ -325,7 +324,7 @@ namespace ModForge.App
             else if (page == "Apply & Restore")
             {
                 pageTitle.Text = "Apply & Restore";
-                pageSubtitle.Text = "Stage first, then confirm game apply and restore options.";
+                pageSubtitle.Text = "Stage first, then inspect staging output. Game writes remain locked.";
                 BuildApplyRestore();
             }
             else
@@ -354,7 +353,7 @@ namespace ModForge.App
                 Children =
                 {
                     Text("Start with Guided Setup", 30, FontWeights.SemiBold, textPrimary),
-                    SpacedText("ModForge will not scan folders, run Python, or write files until you choose an action. The safest path is open project, scan, review plan, apply to staging, then confirm game apply.", 14, textSecondary),
+                    SpacedText("ModForge will not scan folders, run Python, or write files until you choose an action. The safest path is open project, scan, review plan, apply to staging, then inspect staging output.", 14, textSecondary),
                     LargePrimaryButton("Start Guided Setup", accentBlue, delegate { ShowPage("Guided Setup"); }),
                     NextActionPanel()
                 }
@@ -389,8 +388,8 @@ namespace ModForge.App
             steps.Children.Add(WizardStep(3, "Select mods folder", "Choose the folder or archive collection to inspect.", WizardButton("Choose mods folder", IsCurrentWizardStep(WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected), delegate { AdvanceState(WorkflowState.ModsFolderSelected, "Mods folder selected. Scan is now available."); ShowPage("Guided Setup"); }), WorkflowState.ModsFolderSelected, WorkflowState.GameFolderSelected));
             steps.Children.Add(WizardStep(4, "Scan mods", "Scan only starts when you press the button.", WizardButton("Scan now", IsCurrentWizardStep(WorkflowState.Scanned, WorkflowState.ModsFolderSelected), delegate { AdvanceState(WorkflowState.Scanned, "Scan complete. Review the Mods tab."); ShowPage("Mods"); }), WorkflowState.Scanned, WorkflowState.ModsFolderSelected));
             steps.Children.Add(WizardStep(5, "Review plan and conflicts", "Open the plan review and mark it complete before staging.", WizardButton("Open plan review", IsCurrentWizardStep(WorkflowState.PlanReady, WorkflowState.Scanned), delegate { AdvanceState(WorkflowState.PlanReady, "Plan is ready for review."); ShowPage("Plan"); }), WorkflowState.PlanReviewed, WorkflowState.Scanned));
-            steps.Children.Add(WizardStep(6, "Apply to staging", "Staging is the first write step and does not touch the game folder.", WizardButton(HasReached(WorkflowState.Staged) ? "Staging complete" : "Apply to staging", CanApplyToStaging(), delegate { AdvanceState(WorkflowState.Staged, "Applied to staging. Game apply can now be confirmed."); ShowPage("Apply & Restore"); }), WorkflowState.Staged, WorkflowState.PlanReviewed));
-            steps.Children.Add(WizardStep(7, "Apply to game", "Requires staging and confirmation first.", WizardButton(HasReached(WorkflowState.RestoreAvailable) ? "Restore ready" : "Open game apply", HasReached(WorkflowState.Staged) && !HasReached(WorkflowState.RestoreAvailable), delegate { ShowPage("Apply & Restore"); SetStatus("Confirm game apply from the Apply & Restore page."); }), WorkflowState.RestoreAvailable, WorkflowState.Staged));
+            steps.Children.Add(WizardStep(6, "Apply to staging", "Staging is the first write step and does not touch the game folder.", WizardButton(HasReached(WorkflowState.Staged) ? "Staging complete" : "Apply to staging", CanApplyToStaging(), delegate { AdvanceState(WorkflowState.Staged, "Staging complete. Inspect staging output before any game write path is added."); ShowPage("Apply & Restore"); }), WorkflowState.Staged, WorkflowState.PlanReviewed));
+            steps.Children.Add(WizardStep(7, "Inspect staging output", "Game-folder writes remain locked in the fallback shell.", WizardButton(HasReached(WorkflowState.Staged) ? "Open staging result" : "Game apply locked", HasReached(WorkflowState.Staged), delegate { ShowPage("Apply & Restore"); SetStatus("Game apply is locked in this fallback preview. Review staging output first."); }), WorkflowState.RestoreAvailable, WorkflowState.Staged));
             stepsPanel.Child = steps;
 
             var right = new StackPanel();
@@ -541,7 +540,7 @@ namespace ModForge.App
                 IsChecked = planReviewManuallyChecked,
                 IsEnabled = !planReviewManuallyChecked && !HasReached(WorkflowState.Staged)
             };
-            var staging = ActionButton(StagingActionLabel(), accentGreen, delegate { AdvanceState(WorkflowState.Staged, "Applied to staging. Game apply is now available."); ShowPage("Apply & Restore"); });
+            var staging = ActionButton(StagingActionLabel(), accentGreen, delegate { AdvanceState(WorkflowState.Staged, "Staging complete. Game writes remain locked in this fallback preview."); ShowPage("Apply & Restore"); });
             SetButtonState(staging, CanApplyToStaging());
             checkbox.Checked += delegate
             {
@@ -571,9 +570,9 @@ namespace ModForge.App
             var stagingStack = new StackPanel();
             stagingStack.Children.Add(Text("Staging actions", 22, FontWeights.SemiBold, textPrimary));
             stagingStack.Children.Add(SpacedText("Staging writes to the configured staging folder first. It does not touch the game folder.", 13, textSecondary));
-            var applyToStaging = ActionButton(StagingActionLabel(), accentGreen, delegate { AdvanceState(WorkflowState.Staged, "Applied to staging. Game apply now requires explicit confirmation."); ShowPage("Apply & Restore"); });
+            var applyToStaging = ActionButton(StagingActionLabel(), accentGreen, delegate { AdvanceState(WorkflowState.Staged, "Staging complete. Review staging output before any game write path is added."); ShowPage("Apply & Restore"); });
             SetButtonState(applyToStaging, CanApplyToStaging());
-            var openStaging = ActionButton("Open staging folder", accentBlue, delegate { SetStatus("Staging folder can be opened after staging is complete."); });
+            var openStaging = ActionButton("View staging result", accentBlue, delegate { SetStatus("Staging output is available after staging is complete."); });
             SetButtonState(openStaging, HasReached(WorkflowState.Staged));
             stagingStack.Children.Add(RowActions(applyToStaging, openStaging));
             left.Children.Add(stagingPanel);
@@ -584,47 +583,27 @@ namespace ModForge.App
             gamePanel.Margin = new Thickness(0, 16, 0, 0);
             gamePanel.BorderBrush = HasReached(WorkflowState.Staged) ? accentRed : panelBorder;
             var gameStack = new StackPanel();
-            gameStack.Children.Add(Text(HasReached(WorkflowState.RestoreAvailable) ? "Restore manifest available" : "Game apply confirm zone", 22, FontWeights.SemiBold, HasReached(WorkflowState.Staged) ? accentRed : textPrimary));
+            gameStack.Children.Add(Text(HasReached(WorkflowState.RestoreAvailable) ? "Game manifest available" : "Game apply locked", 22, FontWeights.SemiBold, HasReached(WorkflowState.Staged) ? accentRed : textPrimary));
             if (!HasReached(WorkflowState.Staged))
             {
-                gameStack.Children.Add(SpacedText("Game apply stays locked until a staging manifest exists.", 13, textSecondary));
-                var lockedApply = ActionButton("Confirm game apply locked", panelBorder, delegate { SetStatus("Apply to staging first, then confirm game apply."); });
+                gameStack.Children.Add(SpacedText("Game apply stays locked until the staging flow is proven.", 13, textSecondary));
+                var lockedApply = ActionButton("Game apply locked", panelBorder, delegate { SetStatus("Apply to staging first. Game writes remain locked."); });
                 SetButtonState(lockedApply, false);
                 gameStack.Children.Add(RowActions(lockedApply));
             }
             else if (HasReached(WorkflowState.RestoreAvailable))
             {
-                gameStack.Children.Add(SpacedText("Game apply is complete. The safest next step is to inspect the manifest or preview restore.", 13, textSecondary));
+                gameStack.Children.Add(SpacedText("A game manifest is available. The safest next step is manifest inspection and staged record review.", 13, textSecondary));
                 gameStack.Children.Add(RowActions(
                     ActionButton("View latest manifest", accentBlue, delegate { SetStatus("Latest manifest is ready for inspection."); }),
-                    ActionButton("Preview restore", accentGreen, delegate { SetStatus("Restore preview is ready."); })));
+                    ActionButton("Preview staged records", accentGreen, delegate { SetStatus("Staged records are ready for inspection."); })));
             }
             else
             {
-                gameStack.Children.Add(SpacedText("This action writes to the game folder. Confirm explicitly before the button unlocks.", 13, textSecondary));
-                var confirmCheck = new CheckBox
-                {
-                    Content = "I understand this writes staged files to the game folder",
-                    Foreground = textPrimary,
-                    Margin = new Thickness(0, 14, 0, 12),
-                    IsChecked = gameApplyConfirmationChecked
-                };
-                var confirmApply = ActionButton("Confirm game apply", accentRed, delegate { AdvanceState(WorkflowState.RestoreAvailable, "Game apply complete. Restore manifest is available."); ShowPage("Apply & Restore"); });
-                SetButtonState(confirmApply, gameApplyConfirmationChecked);
-                confirmCheck.Checked += delegate
-                {
-                    gameApplyConfirmationChecked = true;
-                    SetButtonState(confirmApply, true);
-                    SetStatus("Explicit confirmation received. Confirm game apply is unlocked.");
-                };
-                confirmCheck.Unchecked += delegate
-                {
-                    gameApplyConfirmationChecked = false;
-                    SetButtonState(confirmApply, false);
-                    SetStatus("Confirm game apply is locked until the confirmation box is checked.");
-                };
-                gameStack.Children.Add(confirmCheck);
-                gameStack.Children.Add(RowActions(confirmApply, ActionButton("View staging manifest", accentBlue, delegate { SetStatus("Staging manifest is ready for inspection."); })));
+                gameStack.Children.Add(SpacedText("Staging is complete, but writing to the game folder remains locked in this fallback preview.", 13, textSecondary));
+                var lockedGameWrites = ActionButton("Game writes locked", accentRed, delegate { SetStatus("Game-folder writes are not wired in the fallback shell."); });
+                SetButtonState(lockedGameWrites, false);
+                gameStack.Children.Add(RowActions(lockedGameWrites, ActionButton("View staging manifest", accentBlue, delegate { SetStatus("Staging manifest is ready for inspection."); })));
             }
             gamePanel.Child = gameStack;
             left.Children.Add(gamePanel);
@@ -638,25 +617,25 @@ namespace ModForge.App
             manifestPanel.Child = ManifestListPanel();
             right.Children.Add(manifestPanel);
 
-            var restorePanel = SoftPanel();
-            restorePanel.Padding = new Thickness(18);
-            restorePanel.Margin = new Thickness(0, 16, 0, 0);
-            var previewRestore = ActionButton("Preview restore", accentBlue, delegate { SetStatus("Restore preview opened."); });
-            var restoreSelected = ActionButton("Restore selected files", accentAmber, delegate { SetStatus("Selected restore requires a manifest selection."); });
-            var restoreAll = ActionButton("Restore all from latest", accentRed, delegate { SetStatus("Full restore stays behind a confirmation dialog."); });
-            SetButtonState(previewRestore, HasReached(WorkflowState.RestoreAvailable));
-            SetButtonState(restoreSelected, HasReached(WorkflowState.RestoreAvailable));
-            SetButtonState(restoreAll, HasReached(WorkflowState.RestoreAvailable));
-            restorePanel.Child = new StackPanel
+            var outputPanel = SoftPanel();
+            outputPanel.Padding = new Thickness(18);
+            outputPanel.Margin = new Thickness(0, 16, 0, 0);
+            var previewStaged = ActionButton("Preview staged records", accentBlue, delegate { SetStatus("Staged records are available after staging."); });
+            var gameWrites = ActionButton("Game writes locked", accentAmber, delegate { SetStatus("Game-folder writes remain locked in this fallback preview."); });
+            var destructive = ActionButton("Destructive actions locked", accentRed, delegate { SetStatus("Destructive recovery actions are not wired in this fallback preview."); });
+            SetButtonState(previewStaged, HasReached(WorkflowState.Staged));
+            SetButtonState(gameWrites, false);
+            SetButtonState(destructive, false);
+            outputPanel.Child = new StackPanel
             {
                 Children =
                 {
-                    Text("Restore actions", 20, FontWeights.SemiBold, textPrimary),
-                    SpacedText("Restore remains manifest-bound. Preview before restoring selected files or a full manifest.", 13, textSecondary),
-                    RowActions(previewRestore, restoreSelected, restoreAll)
+                    Text("Staged output", 20, FontWeights.SemiBold, textPrimary),
+                    SpacedText("Inspect staging records first. Game-folder writes and destructive recovery stay locked.", 13, textSecondary),
+                    RowActions(previewStaged, gameWrites, destructive)
                 }
             };
-            right.Children.Add(restorePanel);
+            right.Children.Add(outputPanel);
 
             UpdateWorkflowUi();
         }
@@ -965,11 +944,11 @@ namespace ModForge.App
 
             if (!HasReached(WorkflowState.RestoreAvailable))
             {
-                stack.Children.Add(ManifestRowPanel("game-apply", "Game", "Locked until confirmation", "Confirm game apply to create the game restore manifest."));
+                stack.Children.Add(ManifestRowPanel("game-apply", "Game", "Locked for preview", "Game-folder writes remain locked in the WPF fallback preview."));
                 return stack;
             }
 
-            stack.Children.Add(ManifestRowPanel("game-latest", "Game", "Available", "Tracks files written to the game folder and powers restore preview."));
+            stack.Children.Add(ManifestRowPanel("game-latest", "Game", "Available", "Tracks files written to the game folder."));
             return stack;
         }
 
@@ -1259,11 +1238,11 @@ namespace ModForge.App
             ShowPage("Apply & Restore");
             if (HasReached(WorkflowState.RestoreAvailable))
             {
-                SetStatus("Restore manifest is available. Preview restore or view the latest manifest.");
+                SetStatus("Game manifest is available. View the latest manifest or staged records.");
             }
             else if (HasReached(WorkflowState.Staged))
             {
-                SetStatus("Game apply requires explicit confirmation in Apply & Restore.");
+                SetStatus("Staging is complete. Game apply remains locked in this fallback preview.");
             }
             else
             {
@@ -1290,7 +1269,7 @@ namespace ModForge.App
                 case WorkflowState.PlanReviewed: return "Plan reviewed";
                 case WorkflowState.Staged: return "Staged";
                 case WorkflowState.GameApplied: return "Game applied";
-                case WorkflowState.RestoreAvailable: return "Restore manifest available";
+                case WorkflowState.RestoreAvailable: return "Game manifest available";
                 default: return workflowState.ToString();
             }
         }
@@ -1307,10 +1286,10 @@ namespace ModForge.App
                 case WorkflowState.Scanned: return "Create and review the plan.";
                 case WorkflowState.PlanReady: return "Review conflicts and warnings.";
                 case WorkflowState.PlanReviewed: return "Apply to staging.";
-                case WorkflowState.Staged: return "Open Apply & Restore and confirm game apply.";
+                case WorkflowState.Staged: return "Open Apply & Restore and inspect staging output.";
                 case WorkflowState.GameApplied: return "Inspect the game apply manifest.";
-                case WorkflowState.RestoreAvailable: return "Preview restore or inspect the latest manifest.";
-                default: return "Preview restore or inspect the manifest.";
+                case WorkflowState.RestoreAvailable: return "Inspect the latest manifest or staged records.";
+                default: return "Inspect the manifest.";
             }
         }
 
@@ -1333,12 +1312,12 @@ namespace ModForge.App
             {
                 if (HasReached(WorkflowState.RestoreAvailable))
                 {
-                    applyButton.Content = "Preview restore";
+                    applyButton.Content = "View latest manifest";
                     applyButton.BorderBrush = accentBlue;
                 }
                 else if (HasReached(WorkflowState.Staged))
                 {
-                    applyButton.Content = "Open game confirm";
+                    applyButton.Content = "View staging result";
                     applyButton.BorderBrush = accentRed;
                 }
                 else

@@ -37,7 +37,7 @@ namespace ModForge.App
             snapshot.Families.Add(new ModFamilyInfo(
                 "REFramework",
                 "Loose nativePC and REFramework folders for RE Engine games.",
-                "Scan loose files, review destination conflicts, stage first, then apply to game with manifest backups.",
+                "Scan loose files, review destination conflicts, stage first, then inspect staging output.",
                 "#4F9CFF"));
             snapshot.Families.Add(new ModFamilyInfo(
                 "Unreal Mods",
@@ -56,7 +56,7 @@ namespace ModForge.App
             snapshot.Steps.Add(new SetupStep(4, "Scan mods", "This is the first potentially slow step. It only runs when you press Scan.", false, false));
             snapshot.Steps.Add(new SetupStep(5, "Review plan and conflicts", "Check winners, overwritten destinations, and warnings before any deployment.", false, true));
             snapshot.Steps.Add(new SetupStep(6, "Apply to staging", "Copy to a staging folder first. This is the safest apply path.", false, false));
-            snapshot.Steps.Add(new SetupStep(7, "Apply to game", "Requires confirmation and creates backups plus a restore manifest.", false, true));
+            snapshot.Steps.Add(new SetupStep(7, "Inspect staging output", "Game-folder writes remain locked in the fallback shell.", false, true));
 
             snapshot.Mods.Add(Mod(true, 1, "Better UI", "REFramework", @"Mods\BetterUI", "OK", 0, 1, @"reframework\data\ui\betterui.lua", "Review conflict in Plan before staging."));
             snapshot.Mods.Add(Mod(true, 2, "Weapon Texture Pack", "Unreal Pak", "WeaponTX_Pack.zip", "OK", 1, 2, @"Content\Paks\~mods\WeaponTX_Pack.pak", "Keep archive intact and stage first."));
