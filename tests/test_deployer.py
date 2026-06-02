@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -58,6 +59,29 @@ class DeployerTests(unittest.TestCase):
             self.assertEqual((staging / "textures" / "icon.txt").read_text(encoding="utf-8"), "icon")
             self.assertEqual(manifest.copied_files, ["textures/icon.txt"])
 
+    def test_apply_to_staging_respects_disabled_mods(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / "staging"
+            (mods / "BetterUI" / "config").mkdir(parents=True)
+            (mods / "Overhaul" / "config").mkdir(parents=True)
+            game.mkdir()
+            (mods / "BetterUI" / "config" / "settings.json").write_text("better", encoding="utf-8")
+            (mods / "Overhaul" / "config" / "settings.json").write_text("overhaul", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            project.set_mod_enabled("betterui", False)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            manifest = apply_to_staging(project, plan, packages)
+
+            self.assertEqual((staging / "config" / "settings.json").read_text(encoding="utf-8"), "overhaul")
+            self.assertEqual(manifest.copied_files, ["config/settings.json"])
+            self.assertEqual(manifest.skipped_files, [])
+            self.assertTrue(all(record.source_mod == "Overhaul" for record in manifest.records))
+
     def test_apply_to_game_backs_up_and_restores(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -76,7 +100,19 @@ class DeployerTests(unittest.TestCase):
             plan = build_deployment_plan(project, packages)
             manifest = apply_to_game(project, plan, packages)
             manifest_path = staging.parent / "manifests" / f"{manifest.manifest_id}.json"
+            disk_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            overwrite_record = next(record for record in manifest.records if record.status == "overwritten")
+            backup_path = Path(overwrite_record.backup_path)
 
+            self.assertEqual(manifest.target, "game")
+            self.assertEqual(Path(manifest.target_root), game.resolve(strict=False))
+            self.assertEqual(Path(manifest.backup_dir), staging.parent / "backups" / manifest.manifest_id)
+            self.assertEqual(manifest.backups, ["config/settings.json"])
+            self.assertTrue(backup_path.exists())
+            self.assertEqual(backup_path.read_text(encoding="utf-8"), "original")
+            self.assertEqual(disk_payload["target"], "game")
+            self.assertEqual(disk_payload["manifest_id"], manifest.manifest_id)
+            self.assertEqual(disk_payload["records"][0]["backup_path"], str(backup_path))
             self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "patched")
             self.assertEqual((game / "textures" / "new.txt").read_text(encoding="utf-8"), "new")
             self.assertEqual(manifest.overwritten_files, ["config/settings.json"])
@@ -98,6 +134,86 @@ class DeployerTests(unittest.TestCase):
             self.assertTrue(restored.restored_at)
             self.assertEqual((game / "config" / "settings.json").read_text(encoding="utf-8"), "original")
             self.assertFalse((game / "textures" / "new.txt").exists())
+
+    def test_apply_to_game_rejects_missing_game_root_before_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "missing-game"
+            staging = root / ".modforge" / "staging"
+            package_root = root / "mods" / "Patch"
+            package_root.mkdir(parents=True)
+            (package_root / "settings.txt").write_text("patched", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, root / "mods", staging)
+            package = ModPackage(
+                id="patch",
+                name="Patch",
+                path=package_root,
+                enabled=True,
+                priority=0,
+                detected_type="loose_folder",
+                files=[ModFile("settings.txt", 7)],
+            )
+            plan = DeploymentPlan(
+                project_name="Demo",
+                operations=[DeploymentOperation("Patch", "settings.txt", "settings.txt")],
+            )
+
+            with self.assertRaises(FileNotFoundError):
+                apply_to_game(project, plan, [package])
+            self.assertFalse((staging.parent / "manifests").exists())
+            self.assertFalse((staging.parent / "backups").exists())
+
+    def test_priority_reorder_changes_apply_winner_after_replan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            (mods / "Base" / "config").mkdir(parents=True)
+            (mods / "Patch" / "config").mkdir(parents=True)
+            game.mkdir()
+            (mods / "Base" / "config" / "settings.json").write_text("base", encoding="utf-8")
+            (mods / "Patch" / "config" / "settings.json").write_text("patch", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            first_plan = build_deployment_plan(project, packages)
+            first_manifest = apply_to_staging(project, first_plan, packages)
+
+            self.assertEqual((staging / "config" / "settings.json").read_text(encoding="utf-8"), "patch")
+            self.assertEqual(first_manifest.skipped_files, ["config/settings.json"])
+
+            project.set_priority_order(["patch", "base"])
+            reordered_packages = scan_mods(project.mods_dir, project.active_profile())
+            second_plan = build_deployment_plan(project, reordered_packages)
+            second_manifest = apply_to_staging(project, second_plan, reordered_packages)
+
+            self.assertEqual((staging / "config" / "settings.json").read_text(encoding="utf-8"), "base")
+            self.assertEqual(second_plan.conflicts[0].winning_mod, "Base")
+            self.assertEqual(second_manifest.overwritten_files, ["config/settings.json"])
+            self.assertEqual(second_manifest.skipped_files, ["config/settings.json"])
+
+    def test_restore_rejects_staging_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mods = root / "mods"
+            game = root / "game"
+            staging = root / "staging"
+            (mods / "Patch").mkdir(parents=True)
+            game.mkdir()
+            (mods / "Patch" / "settings.txt").write_text("patched", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, mods, staging)
+            packages = scan_mods(project.mods_dir, project.active_profile())
+            plan = build_deployment_plan(project, packages)
+            apply_to_staging(project, plan, packages)
+            manifest_path = staging / ".modforge-install-manifest.json"
+
+            with self.assertRaisesRegex(ValueError, "Only game manifests can be restored"):
+                preview_restore_manifest(manifest_path)
+            with self.assertRaisesRegex(ValueError, "Only game manifests can be restored"):
+                restore_manifest(manifest_path)
 
     def test_restore_manifest_can_restore_selected_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -318,6 +434,43 @@ class DeployerTests(unittest.TestCase):
                 apply_to_staging(project, plan, [package])
             self.assertFalse((staging / "safe.txt").exists())
 
+    def test_game_apply_preflight_blocks_partial_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            staging = root / ".modforge" / "staging"
+            package_root = root / "mods" / "Patch"
+            game.mkdir()
+            package_root.mkdir(parents=True)
+            (package_root / "safe.txt").write_text("safe", encoding="utf-8")
+
+            project = ModProject.create("Demo", game, root / "mods", staging)
+            package = ModPackage(
+                id="patch",
+                name="Patch",
+                path=package_root,
+                enabled=True,
+                priority=0,
+                detected_type="loose_folder",
+                files=[
+                    ModFile("safe.txt", 4),
+                    ModFile("../missing.txt", 0),
+                ],
+            )
+            plan = DeploymentPlan(
+                project_name="Demo",
+                operations=[
+                    DeploymentOperation("Patch", "safe.txt", "safe.txt"),
+                    DeploymentOperation("Patch", "../missing.txt", "missing.txt"),
+                ],
+            )
+
+            with self.assertRaises(ValueError):
+                apply_to_game(project, plan, [package])
+            self.assertFalse((game / "safe.txt").exists())
+            self.assertFalse((staging.parent / "manifests").exists())
+            self.assertFalse((staging.parent / "backups").exists())
+
     def test_selected_unreal_sidecar_restore_expands_to_atomic_group(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -405,6 +558,8 @@ class DeployerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 apply_to_game(project, plan, packages)
             self.assertEqual(protected.read_text(encoding="utf-8"), "original")
+            self.assertFalse((staging.parent / "manifests").exists())
+            self.assertFalse((staging.parent / "backups").exists())
 
 
 if __name__ == "__main__":

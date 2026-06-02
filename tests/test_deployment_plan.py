@@ -30,6 +30,14 @@ class DeploymentPlanTests(unittest.TestCase):
         self.assertEqual(len(plan.operations), 4)
         self.assertEqual(len(plan.conflicts), 1)
         self.assertEqual(plan.conflicts[0].destination_path, "config/settings.json")
+        self.assertEqual(plan.conflicts[0].winning_mod, "Overhaul")
+
+        project.set_priority_order(["overhaul", "betterui"])
+        reordered = build_deployment_plan(project, scan_mods(project.mods_dir, project.active_profile()))
+
+        self.assertEqual(len(reordered.conflicts), 1)
+        self.assertEqual(reordered.conflicts[0].destination_path, "config/settings.json")
+        self.assertEqual(reordered.conflicts[0].winning_mod, "BetterUI")
 
     def test_profile_rules_map_destinations_and_ignored_files(self) -> None:
         project = ModProject.create(

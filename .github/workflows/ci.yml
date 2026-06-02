@@ -31,3 +31,6 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\public_staging_smoke.ps1
 
+      - name: Family apply and restore smoke
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\family_apply_restore_smoke.ps1

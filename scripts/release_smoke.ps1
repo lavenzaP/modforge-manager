@@ -34,6 +34,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "public_staging_smoke failed with exit code $LASTEXITCODE"
 }
 
+.\scripts\family_apply_restore_smoke.ps1
+if ($LASTEXITCODE -ne 0) {
+    throw "family_apply_restore_smoke failed with exit code $LASTEXITCODE"
+}
+
 if ($IncludeDesktop) {
     .\scripts\build_windows_shell.ps1
     if ($LASTEXITCODE -ne 0) {

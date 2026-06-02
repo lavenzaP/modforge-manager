@@ -92,6 +92,7 @@ Current freeze docs:
 - [MVP status](docs/mvp-status.md)
 - [Support matrix](docs/support-matrix.md)
 - [Release checklist](docs/release-checklist.md)
+- [Apply workflow certification](docs/apply-workflow-certification.md)
 - [Changelog](CHANGELOG.md)
 - [Architecture V2](docs/architecture-v2.md)
 - [Windows shell plan](docs/windows-shell-plan.md)

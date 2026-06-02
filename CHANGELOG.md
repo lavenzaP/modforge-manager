@@ -16,6 +16,11 @@
   and WinUI game apply is intentionally locked in the public preview.
 - Split the Korean README into `README.ko.md` so the GitHub landing README stays
   English-first while Korean users still get a full local guide.
+- Added apply/restore certification coverage for fake-root game apply, restore
+  preview, selected/full restore, priority winners, export/import metadata, and
+  the REFramework, Unreal sidecar, and Godot/STS2 fixture families.
+- Added a family apply/restore smoke script and WinUI gating checks that keep
+  destructive game apply and restore unwired in the public desktop shell.
 
 ### Development
 

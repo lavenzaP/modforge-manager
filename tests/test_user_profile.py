@@ -55,6 +55,12 @@ class UserProfileTests(unittest.TestCase):
         self.assertEqual(len(plan.conflicts), 0)
         self.assertTrue(all(operation.source_mod == "Overhaul" for operation in plan.operations))
 
+        project.set_mod_enabled("betterui", True)
+        enabled_plan = build_deployment_plan(project, scan_mods(project.mods_dir, project.active_profile()))
+
+        self.assertEqual(len(enabled_plan.conflicts), 1)
+        self.assertEqual(enabled_plan.conflicts[0].destination_path, "config/settings.json")
+
     def test_disabling_mhw_patch_removes_conflict_but_keeps_warning_risk(self) -> None:
         project = ModProject.create(
             name="MHW Demo",
