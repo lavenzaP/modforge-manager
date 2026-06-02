@@ -14,6 +14,8 @@
 - Clarified README status in English and Korean: Python CLI/core is the tested
   backend, WinUI 3 is the primary shell candidate with a real Python bridge,
   and WinUI game apply is intentionally locked in the public preview.
+- Split the Korean README into `README.ko.md` so the GitHub landing README stays
+  English-first while Korean users still get a full local guide.
 
 ### Development
 

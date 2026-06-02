@@ -15,7 +15,7 @@ limited to release readiness:
 - Windows smoke script reliability.
 - Optional lint setup cleanup.
 - Public safety documentation and repository content audit.
-- Staging-first README wording in English and Korean.
+- Staging-first README wording in separate English and Korean README files.
 
 ## Release Blockers
 

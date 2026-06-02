@@ -20,7 +20,8 @@ replacement.
 ## P0 Before Public Visibility
 
 - License wording is intentional and README matches it.
-- README states the staging-first public preview scope.
+- README states the staging-first public preview scope, with the Korean version
+  kept in `README.ko.md`.
 - SECURITY.md exists and explains safe reporting.
 - CONTRIBUTING.md exists and blocks real game/mod assets.
 - CI runs Python unit tests and compile checks.
@@ -70,4 +71,3 @@ engine-like files. Real payloads must not be committed.
 - Virtual filesystem behavior.
 - Bundled Python runtime.
 - Installer packaging, signing, or auto-update.
-

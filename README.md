@@ -1,5 +1,7 @@
 # ModForge Manager
 
+[한국어 README](README.ko.md)
+
 ModForge Manager is a Windows-first desktop and CLI toolkit for organizing game
 mod projects, scanning mod folders, previewing deployments, and generating safe
 conflict reports.
@@ -24,24 +26,6 @@ until the GUI workflow is further hardened.
 Python is not bundled, no installer is shipped, and the project does not provide
 Nexus Mods downloads, encrypted PAK handling, DRM or anti-tamper bypass, asset
 editing, archive repacking, or virtual filesystem behavior.
-
-## Korean Summary / 한국어 요약
-
-ModForge Manager는 Windows 우선 모드 관리 도구입니다. 현재 공개 기준은
-`staging-first public preview`입니다.
-
-- Python CLI/core가 테스트된 백엔드입니다.
-- WinUI 3 셸은 현재 주 Windows GUI 후보이며 실제 Python bridge로 프로젝트
-  생성/로드, 모드 스캔, dry-run plan 생성, 모드 활성화/비활성화, 우선순위 변경,
-  staging 적용을 실행합니다.
-- WinUI에서 게임 폴더에 직접 적용하는 기능은 안전을 위해 아직 잠겨 있습니다.
-- Python CLI/core에는 game apply/restore가 있지만, 공개 GUI 기준은 먼저 staging
-  결과를 확인하는 흐름입니다.
-- Python 런타임 번들, 설치 프로그램, Nexus 다운로드, 암호화 PAK 처리, DRM 우회,
-  에셋 편집, 아카이브 repack, VFS 기능은 아직 지원하지 않습니다.
-
-안전 모델은 dry-run-first, staging-first입니다. Scan/Plan은 파일을 변경하지 않고,
-Apply to staging은 프로젝트의 staging 폴더 안에만 파일을 씁니다.
 
 License note: this repository currently remains "All rights reserved" unless the
 owner explicitly changes the license. Public visibility does not by itself make
