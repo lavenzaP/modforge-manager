@@ -77,7 +77,7 @@ public sealed partial class MainWindow : Window
         ShowPage("Apply & Restore");
         if (HasReached(WorkflowState.RestoreAvailable))
         {
-            SetStatus("Restore manifest is available. Preview restore or view the latest manifest.");
+            SetStatus("Game manifest is available. View the latest manifest or staged records.");
         }
         else if (HasReached(WorkflowState.Staged))
         {
@@ -548,6 +548,78 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async Task PreviewStagingRecordsAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before viewing staged records.");
+            return;
+        }
+
+        if (!CanPreviewStagingRecords())
+        {
+            SetStatus("Apply to staging first. Staged records stay read-only and game apply remains locked.");
+            return;
+        }
+
+        await RunCoreActionAsync("Loading staged records...", async () =>
+        {
+            var manifest = await EnsureStagingManifestAsync();
+            if (manifest == null)
+            {
+                return;
+            }
+
+            await ShowStagingRecordsDialogAsync(manifest);
+            SetStatus($"Staged records ready: {manifest.Records.Count} records in the staging manifest.");
+        });
+    }
+
+    private async Task ShowStagingRecordsDialogAsync(CoreManifest manifest)
+    {
+        var lines = new List<string>
+        {
+            $"Manifest id: {manifest.ManifestId}",
+            $"Manifest path: {manifest.ManifestPath}",
+            $"Target root: {manifest.TargetRoot}",
+            $"Copied: {manifest.Copied}",
+            $"Overwritten: {manifest.Overwritten}",
+            $"Skipped: {manifest.Skipped}",
+            $"Records: {manifest.Records.Count}"
+        };
+        foreach (var record in manifest.Records.Take(100))
+        {
+            var backup = string.IsNullOrWhiteSpace(record.BackupPath) ? "" : " | backup prepared";
+            lines.Add($"- {record.DestinationPath}: {record.Status} (mod={record.SourceMod}){backup}");
+        }
+        if (manifest.Records.Count > 100)
+        {
+            lines.Add($"... {manifest.Records.Count - 100} more records omitted from this preview.");
+        }
+
+        var body = new TextBlock
+        {
+            Text = string.Join(Environment.NewLine, lines),
+            FontFamily = new FontFamily("Cascadia Mono"),
+            FontSize = 13,
+            Foreground = White,
+            TextWrapping = TextWrapping.Wrap
+        };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = ContentHost.XamlRoot,
+            Title = "Staging output preview",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 500,
+                Content = body
+            },
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close
+        };
+        await dialog.ShowAsync();
+    }
+
     private async Task RunCoreActionAsync(string busyMessage, Func<Task> action)
     {
         if (isBusy)
@@ -867,7 +939,7 @@ public sealed partial class MainWindow : Window
         {
             return EmptyActionPage(
                 "Apply & Restore is locked.",
-                "Create and review a plan before staging, game apply, manifests, or restore actions become available.",
+                "Create and review a plan before staging, game apply, manifests, or recovery actions become available.",
                 "Open Plan",
                 CanCreatePlan(),
                 async (_, _) => await CreatePlanAsync(),
@@ -897,21 +969,23 @@ public sealed partial class MainWindow : Window
         grid.Children.Add(right);
         right.Children.Add(ManifestPanel());
 
-        var preview = PrimaryButton("Preview restore", AccentBlue, (_, _) => SetStatus("Restore preview opened."));
-        var selected = PrimaryButton("Restore selected files", AccentAmber, (_, _) => SetStatus("Selected restore requires a manifest selection."));
-        var all = PrimaryButton("Restore all from latest", AccentRed, (_, _) => SetStatus("Full restore stays behind a confirmation dialog."));
-        preview.IsEnabled = selected.IsEnabled = all.IsEnabled = HasReached(WorkflowState.RestoreAvailable);
+        var preview = PrimaryButton("Preview staged records", AccentBlue, async (_, _) => await PreviewStagingRecordsAsync());
+        var gameWrites = PrimaryButton("Game writes locked", AccentAmber, (_, _) => SetStatus("Game-folder writes remain locked in this public preview."));
+        var destructive = PrimaryButton("Destructive actions locked", AccentRed, (_, _) => SetStatus("Destructive recovery actions are not wired in this public preview."));
+        preview.IsEnabled = CanPreviewStagingRecords();
+        gameWrites.IsEnabled = false;
+        destructive.IsEnabled = false;
         right.Children.Add(Panel(Stack(
-            Text("Restore actions", 20, SemiBoldWeight, White),
-            Spaced("Restore remains manifest-bound. Preview before restoring selected files or a full manifest.", 13, Secondary),
-            ButtonRow(preview, selected, all))));
+            Text("Staged output", 20, SemiBoldWeight, White),
+            Spaced("Inspect the manifest records created by staging. Game-folder writes and destructive recovery stay locked.", 13, Secondary),
+            ButtonRow(preview, gameWrites, destructive))));
         return grid;
     }
 
     private UIElement GameApplyPanel()
     {
         var stack = Stack();
-        var title = HasReached(WorkflowState.RestoreAvailable) ? "Restore manifest available" : "Game apply confirm zone";
+        var title = HasReached(WorkflowState.RestoreAvailable) ? "Game manifest available" : "Game apply confirm zone";
         stack.Children.Add(Text(title, 22, SemiBoldWeight, HasReached(WorkflowState.Staged) ? AccentRed : White));
 
         if (!HasReached(WorkflowState.Staged))
@@ -923,10 +997,10 @@ public sealed partial class MainWindow : Window
         }
         else if (HasReached(WorkflowState.RestoreAvailable))
         {
-            stack.Children.Add(Spaced("Game apply is complete. The primary actions are now manifest inspection and restore preview.", 13, Secondary));
+            stack.Children.Add(Spaced("Game apply is complete. The primary actions are now manifest inspection and staged record review.", 13, Secondary));
             stack.Children.Add(ButtonRow(
                 PrimaryButton("View latest manifest", AccentBlue, (_, _) => SetStatus("Latest manifest is ready for inspection.")),
-                PrimaryButton("Preview restore", AccentGreen, (_, _) => SetStatus("Restore preview is ready."))));
+                PrimaryButton("Preview staged records", AccentGreen, async (_, _) => await PreviewStagingRecordsAsync())));
         }
         else
         {
@@ -1178,7 +1252,7 @@ public sealed partial class MainWindow : Window
             return Panel(stack);
         }
 
-        stack.Children.Add(ManifestRow("game-latest", "Game", "Available", "Tracks files written to the game folder and powers restore preview."));
+        stack.Children.Add(ManifestRow("game-latest", "Game", "Available", "Tracks files written to the game folder."));
         return Panel(stack);
     }
 
@@ -1592,6 +1666,8 @@ public sealed partial class MainWindow : Window
 
     private bool CanApplyToStaging() => currentProject != null && planReviewManuallyChecked && HasReached(WorkflowState.PlanReviewed) && !HasReached(WorkflowState.Staged) && !isBusy;
 
+    private bool CanPreviewStagingRecords() => currentProject != null && HasReached(WorkflowState.Staged) && !isBusy;
+
     private string StagingActionLabel() => HasReached(WorkflowState.Staged) ? "Staging complete" : CanApplyToStaging() ? "Apply to staging" : "Apply to staging locked";
 
     private string GameWriteLabel()
@@ -1741,7 +1817,7 @@ public sealed partial class MainWindow : Window
             WorkflowState.PlanReviewed => "Plan reviewed",
             WorkflowState.Staged => "Staged",
             WorkflowState.GameApplied => "Game applied",
-            WorkflowState.RestoreAvailable => "Restore manifest available",
+            WorkflowState.RestoreAvailable => "Game manifest available",
             _ => workflowState.ToString()
         };
     }
@@ -1759,8 +1835,8 @@ public sealed partial class MainWindow : Window
             WorkflowState.PlanReady => "Review conflicts and warnings.",
             WorkflowState.PlanReviewed => "Apply to staging.",
             WorkflowState.Staged => "Review the staging manifest. Game apply is locked for this public preview.",
-            WorkflowState.RestoreAvailable => "Preview restore or inspect the latest manifest.",
-            _ => "Preview restore or inspect the manifest."
+            WorkflowState.RestoreAvailable => "Inspect the latest manifest or staged records.",
+            _ => "Inspect the manifest."
         };
     }
 
@@ -1880,7 +1956,7 @@ public sealed partial class MainWindow : Window
         PlanButton.IsEnabled = CanCreatePlan();
         ApplyButton.IsEnabled = HasReached(WorkflowState.Staged) && !isBusy;
         ApplyButton.Content = HasReached(WorkflowState.RestoreAvailable)
-            ? "Preview restore"
+            ? "View latest manifest"
             : HasReached(WorkflowState.Staged)
                 ? "View staging result"
                 : "Apply to game locked";

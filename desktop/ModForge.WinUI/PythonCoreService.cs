@@ -250,16 +250,7 @@ internal sealed class PythonCoreService
         using var payload = await RunJsonAsync(
             new[] { "apply-staging", "--project-file", projectFile, "--yes", "--json" },
             cancellationToken);
-        var root = payload.RootElement;
-        var manifest = new CoreManifest(
-            ManifestId: GetString(root, "manifest_id"),
-            Target: GetString(root, "target"),
-            TargetRoot: GetString(root, "target_root"),
-            AppliedAt: GetString(root, "applied_at"),
-            Copied: GetArrayCount(root, "copied_files"),
-            Overwritten: GetArrayCount(root, "overwritten_files"),
-            Skipped: GetArrayCount(root, "skipped_files"),
-            ManifestPath: Path.Combine(project.StagingDir, ".modforge-install-manifest.json"));
+        var manifest = ParseCoreManifest(payload.RootElement, Path.Combine(project.StagingDir, ".modforge-install-manifest.json"));
         ValidateStagingManifest(project, manifest);
         return manifest;
     }
@@ -275,16 +266,7 @@ internal sealed class PythonCoreService
 
         var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
         using var payload = JsonDocument.Parse(json);
-        var root = payload.RootElement;
-        var manifest = new CoreManifest(
-            ManifestId: GetString(root, "manifest_id"),
-            Target: GetString(root, "target"),
-            TargetRoot: GetString(root, "target_root"),
-            AppliedAt: GetString(root, "applied_at"),
-            Copied: GetArrayCount(root, "copied_files"),
-            Overwritten: GetArrayCount(root, "overwritten_files"),
-            Skipped: GetArrayCount(root, "skipped_files"),
-            ManifestPath: manifestPath);
+        var manifest = ParseCoreManifest(payload.RootElement, manifestPath);
         ValidateStagingManifest(project, manifest);
         return manifest;
     }
@@ -493,6 +475,33 @@ internal sealed class PythonCoreService
             : 0;
     }
 
+    private static CoreManifest ParseCoreManifest(JsonElement root, string manifestPath)
+    {
+        var records = new List<CoreManifestRecord>();
+        if (root.TryGetProperty("records", out var recordItems) && recordItems.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in recordItems.EnumerateArray())
+            {
+                records.Add(new CoreManifestRecord(
+                    DestinationPath: GetString(item, "destination_path"),
+                    SourceMod: GetString(item, "source_mod"),
+                    Status: GetString(item, "status"),
+                    BackupPath: GetString(item, "backup_path")));
+            }
+        }
+
+        return new CoreManifest(
+            ManifestId: GetString(root, "manifest_id"),
+            Target: GetString(root, "target"),
+            TargetRoot: GetString(root, "target_root"),
+            AppliedAt: GetString(root, "applied_at"),
+            Copied: GetArrayCount(root, "copied_files"),
+            Overwritten: GetArrayCount(root, "overwritten_files"),
+            Skipped: GetArrayCount(root, "skipped_files"),
+            ManifestPath: manifestPath,
+            Records: records);
+    }
+
     private static int RecommendedProfileOrder(string id)
     {
         return id switch
@@ -583,4 +592,11 @@ internal sealed record CoreManifest(
     int Copied,
     int Overwritten,
     int Skipped,
-    string ManifestPath);
+    string ManifestPath,
+    IReadOnlyList<CoreManifestRecord> Records);
+
+internal sealed record CoreManifestRecord(
+    string DestinationPath,
+    string SourceMod,
+    string Status,
+    string BackupPath);

@@ -13,6 +13,9 @@ if ($BridgeCommands -notmatch '"apply-staging"' -or $BridgeCommands -notmatch '"
 if ($BridgeCommands -notmatch "ValidateStagingManifest" -or $BridgeCommands -notmatch "LoadStagingManifestAsync") {
     throw "WinUI Python bridge is missing staging manifest boundary/readback validation."
 }
+if ($BridgeCommands -notmatch "ParseCoreManifest" -or $BridgeCommands -notmatch "CoreManifestRecord") {
+    throw "WinUI Python bridge does not preserve staging manifest records for read-only inspection."
+}
 
 $MainWindowCommands = Get-Content -LiteralPath (Join-Path $RepoRoot "desktop\ModForge.WinUI\MainWindow.xaml.cs") -Raw
 if ($MainWindowCommands -match 'pythonCore\.(ApplyGame|Restore)') {
@@ -20,6 +23,12 @@ if ($MainWindowCommands -match 'pythonCore\.(ApplyGame|Restore)') {
 }
 if ($MainWindowCommands -notmatch "ShowStagingManifestAsync" -or $MainWindowCommands -notmatch "OpenStagingFolderAsync") {
     throw "WinUI MainWindow does not wire staging manifest/folder inspection actions."
+}
+if ($MainWindowCommands -notmatch "PreviewStagingRecordsAsync" -or $MainWindowCommands -notmatch "Staging output preview") {
+    throw "WinUI MainWindow does not wire the read-only staging output preview action."
+}
+if ($MainWindowCommands -match "Preview restore") {
+    throw "WinUI MainWindow still labels the safe staging output action as restore preview."
 }
 if ($MainWindowCommands -match "Staging folder can be opened after staging is complete") {
     throw "WinUI MainWindow still contains the old staging folder placeholder action."
