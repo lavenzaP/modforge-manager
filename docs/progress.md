@@ -308,3 +308,9 @@
   project automatically under `Documents\ModForge Manager\Projects\<game>\`,
   with a default `Mods` folder and a separate `Change mods folder` action for
   users who want a custom source location.
+
+## WinUI Tools/Doctor Read-Only Bridge
+
+- Added script and documentation guardrails for the WinUI `PythonCoreService`
+  bridge: read-only `doctor --json` and `tools check --json` are allowed, while
+  `apply-game` and `restore` remain unwired from WinUI.

@@ -31,6 +31,8 @@ public sealed partial class MainWindow : Window
     private CoreProject? currentProject;
     private CorePlan? currentPlan;
     private CoreManifest? stagingManifest;
+    private CoreDoctorReport? doctorReport;
+    private IReadOnlyList<CoreToolCheck> externalToolChecks = Array.Empty<CoreToolCheck>();
     private string selectedProfileId = "mhw-reframework";
     private string selectedGameFolder = "";
     private string selectedModsFolder = "";
@@ -575,6 +577,33 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private async Task RunDoctorCheckAsync()
+    {
+        await RunCoreActionAsync("Running doctor checks through Python...", async () =>
+        {
+            doctorReport = await pythonCore.RunDoctorAsync(currentProject?.ProjectFile);
+            var ok = doctorReport.Checks.Count(item => IsOkStatus(item.Status));
+            var review = doctorReport.Checks.Count - ok;
+            SetStatus($"Doctor complete: {ok} ok, {review} review items.");
+        });
+    }
+
+    private async Task CheckExternalToolsAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before checking external tools.");
+            return;
+        }
+
+        await RunCoreActionAsync("Checking external tools through Python...", async () =>
+        {
+            externalToolChecks = await pythonCore.CheckToolsAsync(currentProject.ProjectFile);
+            var configured = externalToolChecks.Count(item => item.Exists);
+            SetStatus($"External tool check complete: {configured} configured, {externalToolChecks.Count - configured} missing.");
+        });
+    }
+
     private async Task ShowStagingRecordsDialogAsync(CoreManifest manifest)
     {
         var lines = new List<string>
@@ -1018,18 +1047,63 @@ public sealed partial class MainWindow : Window
 
     private UIElement BuildTools()
     {
-        return TwoColumnGrid(1.2, 1.0,
-            Panel(Stack(
-                Text("Tool status", 22, SemiBoldWeight, White),
-                HeaderRow(new[] { "Tool", "Status", "Detail" }),
-                ToolRow("7-Zip", "Not configured", "Optional archive inspection."),
-                ToolRow("UnrealPak", "Not configured", "Optional extraction, not archive-as-is deployment."),
-                ToolRow("Godot PCK Tool", "Not configured", "Optional PCK inspection."),
-                ToolRow("Python Sidecar", "Idle", "No Python process starts until requested."))),
-            Panel(Stack(
-                Text("Tool checks", 22, SemiBoldWeight, White),
-                Spaced("Tool checks are optional and run only when you request them.", 13, Secondary),
-                PrimaryButton("Check Python Sidecar", AccentBlue, (_, _) => SetStatus("Python sidecar idle. No Python process was launched at startup.")))));
+        var doctorStack = Stack(
+            Text("Doctor checks", 22, SemiBoldWeight, White),
+            Spaced(doctorReport == null
+                ? "No doctor check has been run in this session."
+                : $"Core {doctorReport.Version} · {doctorReport.Checks.Count} checks",
+                13,
+                Secondary),
+            ButtonRow(PrimaryButton("Run Doctor", AccentBlue, async (_, _) => await RunDoctorCheckAsync())));
+
+        doctorStack.Children.Add(HeaderRow(new[] { "Check", "Status", "Detail" }));
+        if (doctorReport == null)
+        {
+            doctorStack.Children.Add(ToolRow("Python sidecar", "Idle", "No Python process starts until requested."));
+        }
+        else
+        {
+            foreach (var check in doctorReport.Checks)
+            {
+                doctorStack.Children.Add(ToolRow(DisplayName(check.Name), DisplayStatus(check.Status), check.Message));
+            }
+        }
+
+        var toolsButton = PrimaryButton("Check External Tools", currentProject == null || isBusy ? Brush("#243141") : AccentBlue, async (_, _) => await CheckExternalToolsAsync());
+        toolsButton.IsEnabled = currentProject != null && !isBusy;
+
+        var toolsStack = Stack(
+            Text("External tools", 22, SemiBoldWeight, White),
+            Spaced(currentProject == null
+                ? "Open or create a project before checking configured external tools."
+                : externalToolChecks.Count == 0
+                    ? "No external tool check has been run for this project."
+                    : $"{externalToolChecks.Count(item => item.Exists)} configured · {externalToolChecks.Count(item => !item.Exists)} missing",
+                13,
+                Secondary),
+            ButtonRow(toolsButton));
+
+        toolsStack.Children.Add(HeaderRow(new[] { "Tool", "Status", "Detail" }));
+        if (externalToolChecks.Count == 0)
+        {
+            toolsStack.Children.Add(ToolRow(
+                "External tools",
+                currentProject == null ? "Locked" : "Idle",
+                currentProject == null ? "Project required." : "Run a check to inspect configured paths."));
+        }
+        else
+        {
+            foreach (var check in externalToolChecks)
+            {
+                var state = check.Exists ? "Configured" : "Missing";
+                var detail = check.Exists
+                    ? ShortPath(check.Path, 80)
+                    : string.IsNullOrWhiteSpace(check.Warning) ? "No path configured." : check.Warning;
+                toolsStack.Children.Add(ToolRow(check.Label, state, detail));
+            }
+        }
+
+        return TwoColumnGrid(1.0, 1.0, Panel(doctorStack), Panel(toolsStack));
     }
 
     private UIElement ProfilePicker()
@@ -1390,7 +1464,7 @@ public sealed partial class MainWindow : Window
 
     private UIElement ToolRow(string name, string state, string detail)
     {
-        return RowGrid(new[] { name, state, detail }, state == "Idle" ? AccentGreen : Secondary);
+        return RowGrid(new[] { name, state, detail }, StatusBrush(state));
     }
 
     private UIElement SelectedModPanel(ModRow mod)
@@ -1705,6 +1779,8 @@ public sealed partial class MainWindow : Window
         currentPlan = null;
         stagingManifest = null;
         planReviewManuallyChecked = false;
+        doctorReport = null;
+        externalToolChecks = Array.Empty<CoreToolCheck>();
     }
 
     private void ApplyConflictCountsToMods()
@@ -1801,6 +1877,51 @@ public sealed partial class MainWindow : Window
         var prefixLength = Math.Max(6, maxLength - file.Length - 6);
         var prefix = path.Substring(0, Math.Min(prefixLength, path.Length));
         return prefix + @"\...\" + file;
+    }
+
+    private Brush StatusBrush(string status)
+    {
+        if (IsOkStatus(status) || status.Equals("Configured", StringComparison.OrdinalIgnoreCase) || status.Equals("Idle", StringComparison.OrdinalIgnoreCase))
+        {
+            return AccentGreen;
+        }
+
+        if (status.Equals("Warn", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Warning", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Missing", StringComparison.OrdinalIgnoreCase))
+        {
+            return AccentAmber;
+        }
+
+        if (status.Equals("Error", StringComparison.OrdinalIgnoreCase) || status.Equals("Failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return AccentRed;
+        }
+
+        return Secondary;
+    }
+
+    private static bool IsOkStatus(string status)
+    {
+        return status.Equals("ok", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("OK", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("passed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string DisplayStatus(string status)
+    {
+        return string.IsNullOrWhiteSpace(status) ? "Unknown" : status.ToUpperInvariant();
+    }
+
+    private static string DisplayName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "Check";
+        }
+
+        return string.Join(" ", value.Split(new[] { '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
     }
 
     private string WorkflowLabel()

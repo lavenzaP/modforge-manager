@@ -52,6 +52,54 @@ internal sealed class PythonCoreService
             .ToList();
     }
 
+    public async Task<CoreDoctorReport> RunDoctorAsync(string? projectFile, CancellationToken cancellationToken = default)
+    {
+        var args = new List<string> { "doctor", "--json" };
+        if (!string.IsNullOrWhiteSpace(projectFile))
+        {
+            args.Add("--project-file");
+            args.Add(projectFile);
+        }
+
+        using var payload = await RunJsonAsync(args, cancellationToken);
+        var root = payload.RootElement;
+        var checks = new List<CoreDoctorCheck>();
+        if (root.TryGetProperty("checks", out var checkItems) && checkItems.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in checkItems.EnumerateArray())
+            {
+                checks.Add(new CoreDoctorCheck(
+                    Name: GetString(item, "name"),
+                    Status: GetString(item, "status"),
+                    Message: GetString(item, "message")));
+            }
+        }
+
+        return new CoreDoctorReport(
+            Version: GetString(root, "version"),
+            ProjectFile: GetString(root, "project_file"),
+            Checks: checks);
+    }
+
+    public async Task<IReadOnlyList<CoreToolCheck>> CheckToolsAsync(string projectFile, CancellationToken cancellationToken = default)
+    {
+        using var payload = await RunJsonAsync(
+            new[] { "tools", "check", "--project-file", projectFile, "--json" },
+            cancellationToken);
+        var checks = new List<CoreToolCheck>();
+        foreach (var item in payload.RootElement.EnumerateArray())
+        {
+            checks.Add(new CoreToolCheck(
+                ToolId: GetString(item, "tool_id"),
+                Label: GetString(item, "label"),
+                Path: GetString(item, "path"),
+                Exists: GetBool(item, "exists"),
+                Warning: GetString(item, "warning")));
+        }
+
+        return checks;
+    }
+
     public async Task<CoreProject> CreateProjectAsync(
         string name,
         string gameRoot,
@@ -553,6 +601,23 @@ internal sealed record CoreGameProfile(
     string TrustLevel,
     int RuleCount,
     bool IsExperimental);
+
+internal sealed record CoreDoctorReport(
+    string Version,
+    string ProjectFile,
+    IReadOnlyList<CoreDoctorCheck> Checks);
+
+internal sealed record CoreDoctorCheck(
+    string Name,
+    string Status,
+    string Message);
+
+internal sealed record CoreToolCheck(
+    string ToolId,
+    string Label,
+    string Path,
+    bool Exists,
+    string Warning);
 
 internal sealed record CoreMod(
     string Id,

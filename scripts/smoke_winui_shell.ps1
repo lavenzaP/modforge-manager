@@ -4,8 +4,25 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 $BridgeCommands = Get-Content -LiteralPath (Join-Path $RepoRoot "desktop\ModForge.WinUI\PythonCoreService.cs") -Raw
-if ($BridgeCommands -match '"apply-game"' -or $BridgeCommands -match '"restore"') {
-    throw "WinUI Python bridge wires a destructive game apply or restore command."
+$BridgeDestructivePatterns = @('"apply-game"', '"restore"', "ApplyGameAsync", "RestoreAsync")
+foreach ($Pattern in $BridgeDestructivePatterns) {
+    if ($BridgeCommands -match $Pattern) {
+        throw "WinUI Python bridge wires a destructive game apply or restore command: $Pattern"
+    }
+}
+$DoctorJsonBridge = (
+    ($BridgeCommands -match '(?s)"doctor".{0,600}"--json"') -or
+    ($BridgeCommands -match '(?s)"--json".{0,600}"doctor"')
+)
+if (-not $DoctorJsonBridge) {
+    throw "WinUI Python bridge does not expose read-only doctor --json diagnostics."
+}
+$ToolsCheckJsonBridge = (
+    ($BridgeCommands -match '(?s)"tools".{0,600}"check".{0,600}"--json"') -or
+    ($BridgeCommands -match '(?s)"--json".{0,600}"tools".{0,600}"check"')
+)
+if (-not $ToolsCheckJsonBridge) {
+    throw "WinUI Python bridge does not expose read-only tools check --json diagnostics."
 }
 if ($BridgeCommands -notmatch '"apply-staging"' -or $BridgeCommands -notmatch '"--yes"' -or $BridgeCommands -notmatch '"--json"') {
     throw "WinUI Python bridge does not expose the expected apply-staging JSON command."
@@ -71,4 +88,4 @@ finally {
     }
 }
 
-Write-Host "WinUI shell smoke passed: no destructive bridge command is wired, startup did not launch ModForge Python, and executable stayed open: $ExePath"
+Write-Host "WinUI shell smoke passed: read-only doctor/tools JSON bridge commands are present, no destructive bridge command is wired, startup did not launch ModForge Python, and executable stayed open: $ExePath"

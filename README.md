@@ -17,7 +17,8 @@ Status: MVP release candidate, staging-first public preview.
 The Python CLI/core is the tested backend. The WinUI 3 shell is the primary
 Windows desktop candidate and uses a real Python bridge for supported actions:
 create/load a project, scan mods, build a dry-run plan, enable/disable mods,
-reorder priority, and apply the winning plan to a managed staging directory.
+reorder priority, run read-only doctor/tool checks, and apply the winning plan
+to a managed staging directory.
 
 WinUI game-folder apply is intentionally locked for now. Game apply and restore
 exist in the Python CLI/core, but the public desktop baseline is staging-first
@@ -72,6 +73,10 @@ The public desktop preview is staging-first:
 Staging apply writes only to the configured project staging directory. It does
 not write to the game installation folder. Use the Python CLI for game
 apply/restore workflows while the WinUI game-write path remains locked.
+
+The WinUI bridge may run read-only `doctor --json` and `tools check --json`
+through `PythonCoreService`. It must not wire `apply-game` or `restore` in the
+WinUI bridge.
 
 ## MVP RC Target
 
@@ -233,6 +238,8 @@ WinUI 3 is designed to avoid startup work: no startup scan, no Python process,
 and no external tool probe until the user chooses an action. It can call the
 Python core for the staging-first workflow listed above. Game apply remains
 locked in the WinUI public preview so staging output can be inspected first.
+The only WinUI diagnostics bridge additions are read-only `doctor --json` and
+`tools check --json`; `apply-game` and `restore` stay CLI-only here.
 
 Run the optional PySide6 GUI after installing the GUI extra:
 
@@ -287,6 +294,8 @@ python -m ruff format --check .
 - Staging apply writes only to the configured staging directory.
 - The WinUI public preview keeps game-folder apply locked; inspect staging
   output first.
+- WinUI may run read-only `doctor --json` and `tools check --json` through the
+  Python bridge, but must not wire `apply-game` or `restore`.
 - Game apply requires `--yes`, backs up overwritten files, and writes a manifest
   under `.modforge\manifests`.
 - Restore requires `--yes` and a manifest path. Add one or more `--path`

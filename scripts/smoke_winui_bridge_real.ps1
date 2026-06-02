@@ -38,6 +38,34 @@ try {
         throw "project show returned unexpected profile: $($Project.game_profile.id)"
     }
 
+    $DoctorJson = & python -m modforge doctor --project-file $ProjectFile --json
+    if ($LASTEXITCODE -ne 0) {
+        throw "doctor --json failed with exit code $LASTEXITCODE"
+    }
+    $Doctor = ($DoctorJson -join [Environment]::NewLine) | ConvertFrom-Json
+    $ProjectFileCheck = $Doctor.checks | Where-Object { $_.name -eq "project-file" } | Select-Object -First 1
+    if ($null -eq $ProjectFileCheck -or $ProjectFileCheck.status -ne "ok") {
+        throw "doctor --json did not report an OK project-file check"
+    }
+
+    $ToolCheckJson = & python -m modforge tools check --project-file $ProjectFile --json
+    if ($LASTEXITCODE -ne 0) {
+        throw "tools check --json failed with exit code $LASTEXITCODE"
+    }
+    $ToolChecks = @(($ToolCheckJson -join [Environment]::NewLine) | ConvertFrom-Json)
+    if ($ToolChecks.Count -lt 1) {
+        throw "tools check --json returned no tool records"
+    }
+    if (@($ToolChecks | Where-Object { -not $_.tool_id }).Count -gt 0) {
+        throw "tools check --json returned a record without a tool_id"
+    }
+    if ((Get-Content -LiteralPath $ConflictPath -Raw).Trim() -ne "original sword model") {
+        throw "read-only doctor/tools checks changed the game folder"
+    }
+    if (Test-Path -LiteralPath $StagingRoot) {
+        throw "read-only doctor/tools checks created staging output"
+    }
+
     $Mods = & python -m modforge scan-mods --project-file $ProjectFile --json | ConvertFrom-Json
     if ($Mods.Count -lt 1) {
         throw "scan-mods returned no mods"
@@ -116,7 +144,7 @@ try {
         throw "apply-staging changed the game folder"
     }
 
-    Write-Host "WinUI real bridge smoke passed: project show, scan, enable/disable, plan, priority reorder, and staging contract are usable."
+    Write-Host "WinUI real bridge smoke passed: project show, read-only doctor/tools JSON checks, scan, enable/disable, plan, priority reorder, and staging contract are usable."
 }
 finally {
     $env:PYTHONPATH = $PreviousPythonPath
