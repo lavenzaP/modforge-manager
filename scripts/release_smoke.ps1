@@ -29,6 +29,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "smoke_gui_import failed with exit code $LASTEXITCODE"
 }
 
+.\scripts\public_staging_smoke.ps1
+if ($LASTEXITCODE -ne 0) {
+    throw "public_staging_smoke failed with exit code $LASTEXITCODE"
+}
+
 if ($IncludeDesktop) {
     .\scripts\build_windows_shell.ps1
     if ($LASTEXITCODE -ne 0) {

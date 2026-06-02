@@ -1,8 +1,10 @@
 # Support Matrix
 
-This matrix describes the MVP freeze scope. "Certified" means the workflow has
-synthetic fixtures and end-to-end tests for scan, plan, conflict report, staging
-apply, game apply, manifest inspection, restore preview, restore, and docs.
+This matrix describes the MVP freeze scope. "Certified" means the Python
+CLI/core workflow has synthetic fixtures and end-to-end tests for scan, plan,
+conflict report, staging apply, game apply, manifest inspection, restore
+preview, restore, and docs. The WinUI public preview is staging-first and keeps
+game-folder apply locked while the desktop workflow is hardened.
 
 | Family | Profiles | Containers | External Tool | Certified Workflow | Fixture |
 | --- | --- | --- | --- | --- | --- |
@@ -16,6 +18,8 @@ apply, game apply, manifest inspection, restore preview, restore, and docs.
 ## Certified Guarantees
 
 - Destination conflicts are detected using Windows case-insensitive path keys.
+- Real staging copies winning operations into the configured staging directory
+  and writes a staging install manifest without mutating the game folder.
 - Same-package case-only duplicate destinations are warned and reduced to one
   planned operation.
 - Linked package paths and linked source/destination components are rejected or

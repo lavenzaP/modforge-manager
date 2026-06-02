@@ -8,6 +8,45 @@ The first version intentionally does not replace Mod Organizer 2, Vortex, or
 Nexus Mods. It focuses on local project structure, dry-run planning, external
 tool checks, and fake-fixture-tested core behavior.
 
+## Current Status
+
+Status: MVP release candidate, staging-first public preview.
+
+The Python CLI/core is the tested backend. The WinUI 3 shell is the primary
+Windows desktop candidate and uses a real Python bridge for supported actions:
+create/load a project, scan mods, build a dry-run plan, enable/disable mods,
+reorder priority, and apply the winning plan to a managed staging directory.
+
+WinUI game-folder apply is intentionally locked for now. Game apply and restore
+exist in the Python CLI/core, but the public desktop baseline is staging-first
+until the GUI workflow is further hardened.
+
+Python is not bundled, no installer is shipped, and the project does not provide
+Nexus Mods downloads, encrypted PAK handling, DRM or anti-tamper bypass, asset
+editing, archive repacking, or virtual filesystem behavior.
+
+## Korean Summary / 한국어 요약
+
+ModForge Manager는 Windows 우선 모드 관리 도구입니다. 현재 공개 기준은
+`staging-first public preview`입니다.
+
+- Python CLI/core가 테스트된 백엔드입니다.
+- WinUI 3 셸은 현재 주 Windows GUI 후보이며 실제 Python bridge로 프로젝트
+  생성/로드, 모드 스캔, dry-run plan 생성, 모드 활성화/비활성화, 우선순위 변경,
+  staging 적용을 실행합니다.
+- WinUI에서 게임 폴더에 직접 적용하는 기능은 안전을 위해 아직 잠겨 있습니다.
+- Python CLI/core에는 game apply/restore가 있지만, 공개 GUI 기준은 먼저 staging
+  결과를 확인하는 흐름입니다.
+- Python 런타임 번들, 설치 프로그램, Nexus 다운로드, 암호화 PAK 처리, DRM 우회,
+  에셋 편집, 아카이브 repack, VFS 기능은 아직 지원하지 않습니다.
+
+안전 모델은 dry-run-first, staging-first입니다. Scan/Plan은 파일을 변경하지 않고,
+Apply to staging은 프로젝트의 staging 폴더 안에만 파일을 씁니다.
+
+License note: this repository currently remains "All rights reserved" unless the
+owner explicitly changes the license. Public visibility does not by itself make
+the project open source.
+
 ## Current Scope
 
 - Create and load a modding project file.
@@ -35,6 +74,20 @@ tool checks, and fake-fixture-tested core behavior.
 - Inspect manifests from the CLI, preview restores, and audit/export/import
   project metadata without copying real game or mod payloads.
 - Run Windows smoke scripts for release-candidate checks.
+
+## Public Preview Scope
+
+The public desktop preview is staging-first:
+
+1. Create or load a managed project.
+2. Scan mods.
+3. Generate a dry-run deployment plan.
+4. Review conflicts and warnings.
+5. Apply the winning plan to the project staging directory.
+
+Staging apply writes only to the configured project staging directory. It does
+not write to the game installation folder. Use the Python CLI for game
+apply/restore workflows while the WinUI game-write path remains locked.
 
 ## MVP RC Target
 
@@ -191,6 +244,11 @@ powershell -ExecutionPolicy Bypass -File scripts\build_winui_shell.ps1
 See `docs\windows-shell-decision.md` and `docs\winui3-comparison.md` for the
 WinUI 3 decision and WPF fallback policy.
 
+WinUI 3 is designed to avoid startup work: no startup scan, no Python process,
+and no external tool probe until the user chooses an action. It can call the
+Python core for the staging-first workflow listed above. Game apply remains
+locked in the WinUI public preview so staging output can be inspected first.
+
 Run the optional PySide6 GUI after installing the GUI extra:
 
 ```powershell
@@ -225,6 +283,7 @@ python -m unittest discover -s tests
 python -m modforge doctor --project-file modforge.project.json
 .\scripts\release_smoke.ps1
 .\scripts\release_smoke.ps1 -IncludeDesktop
+.\scripts\public_staging_smoke.ps1
 ```
 
 Optional dev tooling after installing extras:
@@ -241,6 +300,8 @@ python -m ruff format --check .
 
 - Dry-run by default.
 - Staging apply writes only to the configured staging directory.
+- The WinUI public preview keeps game-folder apply locked; inspect staging
+  output first.
 - Game apply requires `--yes`, backs up overwritten files, and writes a manifest
   under `.modforge\manifests`.
 - Restore requires `--yes` and a manifest path. Add one or more `--path`

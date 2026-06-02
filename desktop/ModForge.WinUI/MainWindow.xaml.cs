@@ -610,7 +610,7 @@ public sealed partial class MainWindow : Window
         steps.Children.Add(CompactWizardStep(4, "Scan mods", "Read-only Python scan. No files will be changed.", WizardButton(HasReached(WorkflowState.Scanned) ? "Scan again" : "Scan now", CanScan(), async (_, _) => await ScanProjectAsync()), WorkflowState.Scanned, WorkflowState.ModsFolderSelected));
         steps.Children.Add(CompactWizardStep(5, "Review plan and conflicts", "Create a dry-run plan, then inspect winners, overwritten destinations, and warnings.", WizardButton(HasReached(WorkflowState.PlanReady) ? "Rebuild plan" : "Create plan", CanCreatePlan(), async (_, _) => await CreatePlanAsync()), WorkflowState.PlanReviewed, WorkflowState.Scanned));
         steps.Children.Add(CompactWizardStep(6, "Apply to staging", "First write step. The game folder is still untouched.", WizardButton(StagingActionLabel(), CanApplyToStaging(), async (_, _) => await ApplyStagingAsync()), WorkflowState.Staged, WorkflowState.PlanReviewed));
-        steps.Children.Add(CompactWizardStep(7, "Apply to game", "Locked in 6E. Staging must be proven first.", WizardButton(HasReached(WorkflowState.Staged) ? "Open staging result" : "Game apply locked", HasReached(WorkflowState.Staged), (_, _) => { ShowPage("Apply & Restore"); SetStatus("Game apply remains locked in this milestone. Review the staging manifest first."); }), WorkflowState.RestoreAvailable, WorkflowState.Staged));
+        steps.Children.Add(CompactWizardStep(7, "Apply to game", "Locked for safety in the public preview. Inspect staging first.", WizardButton(HasReached(WorkflowState.Staged) ? "Open staging result" : "Game apply locked", HasReached(WorkflowState.Staged), (_, _) => { ShowPage("Apply & Restore"); SetStatus("Game apply is locked for safety in this public preview. Review the staging manifest first."); }), WorkflowState.RestoreAvailable, WorkflowState.Staged));
 
         return Panel(steps);
     }
@@ -810,7 +810,7 @@ public sealed partial class MainWindow : Window
 
         if (!HasReached(WorkflowState.Staged))
         {
-            var locked = PrimaryButton("Game apply locked", Brush("#243141"), (_, _) => SetStatus("Apply to staging first. Game apply is not wired in 6E."));
+            var locked = PrimaryButton("Game apply locked", Brush("#243141"), (_, _) => SetStatus("Apply to staging first. Game apply is locked for safety in this public preview."));
             locked.IsEnabled = false;
             stack.Children.Add(Spaced("Game apply stays locked until the staging flow is proven.", 13, Secondary));
             stack.Children.Add(ButtonRow(locked));
@@ -824,9 +824,9 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            var confirm = PrimaryButton("Game apply locked", Brush("#2A1620"), (_, _) => SetStatus("Game apply is intentionally not wired in 6E."));
+            var confirm = PrimaryButton("Game apply locked", Brush("#2A1620"), (_, _) => SetStatus("Game apply is locked for safety in this public preview."));
             confirm.IsEnabled = false;
-            stack.Children.Add(Spaced("Staging is complete, but writing to the game folder remains locked in this milestone. Review the staging manifest first.", 13, Secondary));
+            stack.Children.Add(Spaced("Staging is complete, but writing to the game folder remains locked in this public preview. Review the staging manifest first.", 13, Secondary));
             stack.Children.Add(ButtonRow(confirm, PrimaryButton("View staging manifest", AccentBlue, (_, _) => SetStatus(StagingManifestStatus()))));
         }
 
@@ -1068,7 +1068,7 @@ public sealed partial class MainWindow : Window
         stack.Children.Add(ManifestRow(stagingManifest?.ManifestId ?? "staging-latest", "Staging", "Created by staging", StagingManifestStatus()));
         if (!HasReached(WorkflowState.RestoreAvailable))
         {
-            stack.Children.Add(ManifestRow("game-apply", "Game", "Locked in 6E", "Game-folder writes are intentionally not wired in this milestone."));
+            stack.Children.Add(ManifestRow("game-apply", "Game", "Locked for preview", "Game-folder writes remain locked in the WinUI public preview."));
             return Panel(stack);
         }
 
@@ -1491,7 +1491,7 @@ public sealed partial class MainWindow : Window
     private string GameWriteLabel()
     {
         if (HasReached(WorkflowState.RestoreAvailable)) return "Manifest available";
-        if (HasReached(WorkflowState.Staged)) return "Locked in 6E";
+        if (HasReached(WorkflowState.Staged)) return "Locked for preview";
         return "Locked";
     }
 
@@ -1652,7 +1652,7 @@ public sealed partial class MainWindow : Window
             WorkflowState.Scanned => "Create and review the plan.",
             WorkflowState.PlanReady => "Review conflicts and warnings.",
             WorkflowState.PlanReviewed => "Apply to staging.",
-            WorkflowState.Staged => "Review the staging manifest. Game apply is locked in 6E.",
+            WorkflowState.Staged => "Review the staging manifest. Game apply is locked for this public preview.",
             WorkflowState.RestoreAvailable => "Preview restore or inspect the latest manifest.",
             _ => "Preview restore or inspect the manifest."
         };

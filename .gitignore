@@ -13,6 +13,7 @@ dist/
 venv/
 .dotnet_cli_home/
 .nuget/
+.codex_tmp*/
 .idea/
 .vscode/
 .vs/
@@ -40,7 +41,11 @@ modforge.project.json
 *.rar
 *.zip
 *.pak
+*.ucas
+*.utoc
 *.pck
+*.uasset
+*.uexp
 *.ba2
 *.bsa
 *.dll
@@ -50,4 +55,6 @@ modforge.project.json
 
 # Synthetic test fixtures may use engine-like extensions.
 !tests/fixtures/**/*.pak
+!tests/fixtures/**/*.ucas
+!tests/fixtures/**/*.utoc
 !tests/fixtures/**/*.pck

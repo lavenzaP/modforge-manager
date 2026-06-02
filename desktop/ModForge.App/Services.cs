@@ -25,7 +25,7 @@ namespace ModForge.App
         {
             var snapshot = new ProjectSnapshot();
             snapshot.ProjectName = "Wilds Project";
-            snapshot.ProjectPath = @"D:\ModForge\Projects\Wilds Project\project.mfproj";
+            snapshot.ProjectPath = @"C:\Path\To\ModForge\Projects\Wilds Project\project.mfproj";
             snapshot.ProfileId = "mhw-reframework";
             snapshot.TotalMods = 24;
             snapshot.EnabledMods = 16;

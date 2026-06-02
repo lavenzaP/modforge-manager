@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Public Readiness
+
+- Added public-readiness documentation for the staging-first public preview.
+- Added SECURITY and CONTRIBUTING guidance that blocks real game/mod assets,
+  generated binaries, crash dumps, private logs, and bypass requests.
+- Added GitHub Actions CI for Python unit tests, compile checks, and the public
+  staging smoke.
+- Added a public staging smoke script that verifies scan, dry-run plan,
+  apply-staging, staging manifest creation, and no game-folder writes.
+- Clarified README status in English and Korean: Python CLI/core is the tested
+  backend, WinUI 3 is the primary shell candidate with a real Python bridge,
+  and WinUI game apply is intentionally locked in the public preview.
+
+### Development
+
 - Harden Windows release smoke scripts so native command failures stop the run.
 - Add release-readiness safety coverage for case-insensitive path conflicts,
   linked paths, ZIP absolute paths, and Unreal sidecar restore selection.

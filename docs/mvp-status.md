@@ -1,6 +1,6 @@
 # MVP Status
 
-Status: MVP core complete, release-candidate freeze in progress.
+Status: MVP core complete, staging-first public preview hardening in progress.
 
 Baseline commit before freeze hardening: `fe222bd`.
 
@@ -14,6 +14,8 @@ limited to release readiness:
 - Changelog and release checklist.
 - Windows smoke script reliability.
 - Optional lint setup cleanup.
+- Public safety documentation and repository content audit.
+- Staging-first README wording in English and Korean.
 
 ## Release Blockers
 
@@ -21,6 +23,10 @@ limited to release readiness:
 - Release smoke must stop on native command failures.
 - Certified core mod family support must remain covered by tests.
 - No real game files or real mod archives may be committed.
+- Real staging must pass from the CLI/core and WinUI bridge before public
+  visibility.
+- WinUI game apply may remain locked in the public preview as an explicit safety
+  boundary.
 
 ## Deferred After MVP RC
 
@@ -29,3 +35,4 @@ limited to release readiness:
 - Asset editing and archive repacking.
 - Installer/signing/update flow.
 - Virtual filesystem behavior.
+- WinUI game apply/restore destructive-action exposure.
