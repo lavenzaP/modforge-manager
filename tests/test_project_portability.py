@@ -38,7 +38,10 @@ class ProjectPortabilityTests(unittest.TestCase):
             self.assertEqual(imported.name, "Demo")
             self.assertEqual(imported.game_profile.id, "sts2-mods")
             saved = json.loads((import_dir / "modforge.project.json").read_text(encoding="utf-8"))
-            self.assertEqual(saved["staging_dir"], str(import_dir / ".modforge" / "staging"))
+            self.assertEqual(
+                Path(saved["staging_dir"]).resolve(strict=False),
+                (import_dir / ".modforge" / "staging").resolve(strict=False),
+            )
             self.assertEqual(saved["user_profiles"][0]["disabled_mod_ids"], ["example"])
 
     def test_project_audit_reports_missing_required_paths(self) -> None:
