@@ -90,7 +90,7 @@
       "safety_tier": "archive"
     }
   ],
-  "ignored_patterns": ["**/.DS_Store", "**/Thumbs.db", "README*", "*.txt"],
+  "ignored_patterns": ["meta.ini", "**/.DS_Store", "**/Thumbs.db", "README*", "*.txt"],
   "supported_containers": ["loose_folder", "zip", "unreal_pak"],
   "sidecar_groups": [
     {

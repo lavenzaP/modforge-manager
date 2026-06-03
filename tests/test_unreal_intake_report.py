@@ -49,6 +49,21 @@ class UnrealIntakeReportTests(unittest.TestCase):
             self.assertEqual(report.sidecar_groups[0].missing_extensions, [".utoc"])
             self.assertTrue(any("missing .utoc" in warning for warning in report.warnings))
 
+    def test_unreal_intake_ignores_mo2_meta_ini(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "mo2"
+            write_file(source, "meta.ini", b"[General]")
+            for suffix in [".pak", ".ucas", ".utoc"]:
+                write_file(source, f"CoolMod_P{suffix}")
+
+            report = build_unreal_intake_report(builtin_profile("stellar-blade.experimental"), source)
+
+            self.assertTrue(report.ok)
+            self.assertEqual(report.summary()["files"], 4)
+            self.assertEqual(report.unmanaged_files, [])
+            ignored = [operation for operation in report.operations_preview if operation.action == "ignored"]
+            self.assertEqual([operation.source_path for operation in ignored], ["meta.ini"])
+
     def test_unreal_intake_preserves_rooted_sb_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "rooted"

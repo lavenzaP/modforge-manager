@@ -81,9 +81,13 @@ try {
     Write-Host "Report: $outputPath"
     Write-Host "Profile: $($report.profile_id)"
     Write-Host "Package shape: $($report.package_shape)"
-    $managedFiles = @($report.operations_preview).Count - @($report.unmanaged_files).Count
+    $ignoredFiles = @($report.operations_preview | Where-Object { $_.action -eq "ignored" }).Count
+    $managedFiles = @($report.operations_preview | Where-Object {
+        $_.action -ne "unmanaged" -and $_.action -ne "ignored"
+    }).Count
     Write-Host ("Files: {0}" -f $report.summary.files)
     Write-Host ("Managed files: {0}" -f $managedFiles)
+    Write-Host ("Ignored files: {0}" -f $ignoredFiles)
     Write-Host ("Sidecar groups: {0}" -f $report.summary.sidecar_groups)
     Write-Host ("High-risk files: {0}" -f $report.summary.high_risk_files)
     Write-Host ("Unmanaged files: {0}" -f $report.summary.unmanaged_files)
