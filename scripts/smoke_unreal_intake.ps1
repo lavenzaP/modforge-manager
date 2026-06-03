@@ -5,6 +5,7 @@ $previousPythonPath = $env:PYTHONPATH
 $env:PYTHONPATH = Join-Path $repo "src"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("modforge-unreal-intake-" + [guid]::NewGuid().ToString("N"))
 $source = Join-Path $temp "mixed"
+$reportPath = Join-Path $temp "reports\intake.json"
 New-Item -ItemType Directory -Path $source | Out-Null
 
 function Write-Stub {
@@ -27,7 +28,7 @@ try {
     Write-Stub "LogicMods\Experimental\foo.uasset"
     Write-Stub "unknown.bin"
 
-    $json = python -m modforge unreal intake --profile stellar-blade.experimental --source $source --json
+    $json = python -m modforge unreal intake --profile stellar-blade.experimental --source $source --output $reportPath --json
     $report = $json | ConvertFrom-Json
 
     if (-not $report.ok) {
@@ -47,6 +48,13 @@ try {
     }
     if (-not ($report.warnings -match "LogicMods layout is experimental")) {
         throw "Expected LogicMods experimental warning."
+    }
+    if (-not (Test-Path -LiteralPath $reportPath)) {
+        throw "Expected intake report file to be written."
+    }
+    $saved = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+    if ($saved.summary.files -ne $report.summary.files) {
+        throw "Saved intake report does not match stdout summary."
     }
 
     $before = Get-ChildItem -Path $source -Recurse -File | ForEach-Object { $_.FullName } | Sort-Object

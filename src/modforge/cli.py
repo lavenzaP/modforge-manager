@@ -274,6 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     unreal_intake.add_argument("--profile", default="stellar-blade.experimental", help="Game profile id or JSON file")
     unreal_intake.add_argument("--source", required=True, type=Path, help="Mod folder, zip, or single file to inspect")
+    unreal_intake.add_argument("--output", type=Path, help="Write the JSON intake report to this file")
     unreal_intake.add_argument("--json", action="store_true")
     unreal_intake.set_defaults(handler=handle_unreal_intake)
 
@@ -696,11 +697,33 @@ def handle_translation_inventory(args: argparse.Namespace) -> int:
 def handle_unreal_intake(args: argparse.Namespace) -> int:
     profile = builtin_profile(args.profile)
     report = build_unreal_intake_report(profile, args.source)
+    payload = report.to_dict()
+    if args.output is not None:
+        output_error = _validate_report_output_path(args.source, args.output)
+        if output_error:
+            print(output_error)
+            return 2
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if args.json:
-        print(json.dumps(report.to_dict(), indent=2))
+        print(json.dumps(payload, indent=2))
     else:
         print(format_unreal_intake_report(report))
+        if args.output is not None:
+            print(f"Wrote intake report: {args.output}")
     return 0 if report.ok else 1
+
+
+def _validate_report_output_path(source: Path, output: Path) -> str:
+    source_resolved = source.resolve(strict=False)
+    output_resolved = output.resolve(strict=False)
+    if source_resolved == output_resolved:
+        return "Refusing to write intake report over the inspected source."
+    if output.exists():
+        return f"Refusing to overwrite existing intake report: {output}"
+    if source_resolved.is_dir() and output_resolved.is_relative_to(source_resolved):
+        return "Refusing to write intake report inside the inspected source folder."
+    return ""
 
 
 def format_plan_summary(summary: dict[str, object]) -> str:

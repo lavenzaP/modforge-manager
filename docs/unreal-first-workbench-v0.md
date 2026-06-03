@@ -45,13 +45,17 @@ more games.
 Use synthetic fixtures first:
 
 ```powershell
-python -m modforge unreal intake --profile stellar-blade.experimental --source <mod-folder-or-zip> --json
+python -m modforge unreal intake --profile stellar-blade.experimental --source <mod-folder-or-zip> --output .modforge/intake-report.json --json
 ```
 
 Real mod testing should start only after the intake report can classify the
 package tree, preview destinations, flag high-risk runtime files, and leave
 unknown files unmanaged. The first real-mod pass should capture the package tree
 and review the intake report, not install into the game folder.
+
+Write `--output` reports outside the inspected mod folder or archive path.
+ModForge refuses to overwrite the source, write inside a folder source, or
+silently replace an existing report file.
 
 ## Regression Families
 

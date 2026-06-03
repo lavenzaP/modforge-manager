@@ -164,11 +164,13 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "sample"
+            output_file = root / "reports" / "intake.json"
             source.mkdir()
             for suffix in [".pak", ".ucas"]:
                 (source / f"Broken_P{suffix}").write_bytes(b"stub")
             (source / "dwmapi.dll").write_bytes(b"dll")
             (source / "unknown.bin").write_bytes(b"unknown")
+            before = sorted(path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file())
 
             code, output = self.run_cli(
                 [
@@ -178,18 +180,77 @@ class CliTests(unittest.TestCase):
                     "stellar-blade.experimental",
                     "--source",
                     str(source),
+                    "--output",
+                    str(output_file),
                     "--json",
                 ]
             )
 
             self.assertEqual(code, 0)
             payload = json.loads(output)
+            saved = json.loads(output_file.read_text(encoding="utf-8"))
             self.assertTrue(payload["ok"])
+            self.assertEqual(saved["summary"], payload["summary"])
             self.assertEqual(payload["profile_id"], "stellar-blade.experimental")
             self.assertEqual(payload["summary"]["high_risk_files"], 1)
             self.assertEqual(payload["summary"]["unmanaged_files"], 1)
             self.assertEqual(payload["sidecar_groups"][0]["missing_extensions"], [".utoc"])
             self.assertTrue(any("missing .utoc" in warning for warning in payload["warnings"]))
+            after = sorted(path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file())
+            self.assertEqual(after, before)
+
+    def test_cli_unreal_intake_output_guards_source_and_existing_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "sample"
+            source.mkdir()
+            (source / "Cool_P.pak").write_bytes(b"stub")
+
+            source_file_code, source_file_output = self.run_cli(
+                [
+                    "unreal",
+                    "intake",
+                    "--source",
+                    str(source / "Cool_P.pak"),
+                    "--output",
+                    str(source / "Cool_P.pak"),
+                    "--json",
+                ]
+            )
+            self.assertEqual(source_file_code, 2)
+            self.assertIn("over the inspected source", source_file_output)
+
+            inside_code, inside_output = self.run_cli(
+                [
+                    "unreal",
+                    "intake",
+                    "--source",
+                    str(source),
+                    "--output",
+                    str(source / "report.json"),
+                    "--json",
+                ]
+            )
+            self.assertEqual(inside_code, 2)
+            self.assertIn("inside the inspected source folder", inside_output)
+            self.assertFalse((source / "report.json").exists())
+
+            existing = root / "report.json"
+            existing.write_text("already here", encoding="utf-8")
+            overwrite_code, overwrite_output = self.run_cli(
+                [
+                    "unreal",
+                    "intake",
+                    "--source",
+                    str(source),
+                    "--output",
+                    str(existing),
+                    "--json",
+                ]
+            )
+            self.assertEqual(overwrite_code, 2)
+            self.assertIn("Refusing to overwrite existing intake report", overwrite_output)
+            self.assertEqual(existing.read_text(encoding="utf-8"), "already here")
 
     def test_cli_project_set_paths_preserves_profile_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

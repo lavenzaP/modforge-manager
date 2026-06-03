@@ -177,8 +177,12 @@ python -m modforge project audit
 python -m modforge project export --out .modforge\project-export.json
 python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
 python -m modforge translation inventory --project-file modforge.project.json --target staging --json
-python -m modforge unreal intake --profile stellar-blade.experimental --source C:\ModForge\SampleUnrealMod --json
+python -m modforge unreal intake --profile stellar-blade.experimental --source C:\ModForge\SampleUnrealMod --output .modforge\intake-report.json --json
 ```
+
+For real mod intake, choose an `--output` path outside the inspected mod folder
+or archive path. ModForge refuses to overwrite the source, write the report
+inside a folder source, or replace an existing report file.
 
 Run the guided safe workflow on a temporary synthetic Monster Hunter Wilds /
 REFramework fixture:

@@ -344,3 +344,5 @@
   reviewed as high-risk instead of being hidden by broad `SB/**` mapping.
 - Added synthetic temp-fixture tests and a smoke script for intake reporting
   without committing real mod archives.
+- Added an `--output` option so real-mod intake runs can save a JSON report
+  artifact while leaving the inspected source untouched.
