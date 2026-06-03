@@ -314,3 +314,21 @@
 - Added script and documentation guardrails for the WinUI `PythonCoreService`
   bridge: read-only `doctor --json` and `tools check --json` are allowed, while
   `apply-game` and `restore` remain unwired from WinUI.
+
+## Unreal-First Workbench v0
+
+- Re-consulted ChatGPT through the existing Whale/ChatGPT thread and selected
+  an Unreal-first workbench direction instead of adding more equal-priority game
+  surfaces.
+- Kept REFramework/nativePC and Godot/STS2 fixture support as regression
+  coverage while making `unreal-pak` the primary profile candidate.
+- Hardened the built-in `unreal-pak` profile with `family`, description, rule
+  ids, archive safety tier, sidecar grouping, and validation samples.
+- Added `translation inventory` to inspect staged output without mutating the
+  game folder.
+- Added translation inventory classification for JSON/CSV/TXT, Unreal
+  `.locres/.locmeta`, staged `.pak/.ucas/.utoc` archives, and binary Unreal
+  assets.
+- Wired WinUI Apply & Restore to run the read-only localization inventory
+  through `PythonCoreService` and display the candidate summary.
+- Updated English/Korean README and workbench docs for the Unreal-first pivot.

@@ -32,6 +32,7 @@ from modforge.doctor import format_doctor_report, run_doctor
 from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import check_tools
 from modforge.translation.exporter import extract_strings, write_entries_csv
+from modforge.translation.inventory import build_translation_inventory, format_translation_inventory
 
 DEFAULT_PROJECT_FILE = Path("modforge.project.json")
 
@@ -248,6 +249,21 @@ def build_parser() -> argparse.ArgumentParser:
     translation_extract.add_argument("--output", required=True, type=Path)
     translation_extract.add_argument("--json", action="store_true")
     translation_extract.set_defaults(handler=handle_translation_extract)
+
+    translation_inventory = translation_subcommands.add_parser(
+        "inventory",
+        help="Inspect staged output for translation and Unreal localization candidates",
+    )
+    translation_inventory.add_argument("--project-file", type=Path, default=DEFAULT_PROJECT_FILE)
+    translation_inventory.add_argument(
+        "--target",
+        choices=["staging", "mods"],
+        default="staging",
+        help="Project folder to inspect. Staging is the safe default.",
+    )
+    translation_inventory.add_argument("--source", type=Path, help="Inspect this folder instead of a project target")
+    translation_inventory.add_argument("--json", action="store_true")
+    translation_inventory.set_defaults(handler=handle_translation_inventory)
 
     return parser
 
@@ -638,6 +654,30 @@ def handle_translation_extract(args: argparse.Namespace) -> int:
         print(json.dumps({"entries": len(entries), "output": str(args.output)}, indent=2))
     else:
         print(f"Extracted {len(entries)} strings to {args.output}")
+    return 0
+
+
+def handle_translation_inventory(args: argparse.Namespace) -> int:
+    if args.source is not None:
+        report = build_translation_inventory(
+            args.source,
+            project_name=args.source.name,
+            target="source",
+        )
+    else:
+        project = ModProject.load(args.project_file)
+        root = project.staging_dir if args.target == "staging" else project.mods_dir
+        report = build_translation_inventory(
+            root,
+            project_name=project.name,
+            profile_id=project.game_profile.id,
+            profile_family=project.game_profile.family,
+            target=args.target,
+        )
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_translation_inventory(report))
     return 0
 
 

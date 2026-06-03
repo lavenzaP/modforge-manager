@@ -106,6 +106,60 @@ class CliTests(unittest.TestCase):
             boss_profile = next(item for item in payload["user_profiles"] if item["id"] == "boss-run")
             self.assertEqual(boss_profile["disabled_mod_ids"], ["modone"])
 
+    def test_cli_translation_inventory_reads_staging_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            mods = root / "mods"
+            project_file = root / "modforge.project.json"
+            mod = mods / "TextPak"
+            (mod / "Content" / "Localization" / "Game" / "en").mkdir(parents=True)
+            (mod / "Content" / "Data").mkdir(parents=True)
+            game.mkdir()
+            (mod / "CoolOutfit_P.pak").write_bytes(b"pak")
+            (mod / "Content" / "Localization" / "Game" / "en" / "Game.locres").write_bytes(b"locres")
+            (mod / "Content" / "Data" / "menu.json").write_text('{"start": "Start"}', encoding="utf-8")
+
+            self.assertEqual(
+                self.run_cli(
+                    [
+                        "project",
+                        "init",
+                        "--name",
+                        "Unreal Demo",
+                        "--game-root",
+                        str(game),
+                        "--mods-dir",
+                        str(mods),
+                        "--profile",
+                        "unreal-pak",
+                        "--project-file",
+                        str(project_file),
+                    ]
+                )[0],
+                0,
+            )
+            self.assertEqual(self.run_cli(["apply-staging", "--project-file", str(project_file), "--yes"])[0], 0)
+
+            code, output = self.run_cli([
+                "translation",
+                "inventory",
+                "--project-file",
+                str(project_file),
+                "--json",
+            ])
+            self.assertEqual(code, 0)
+            payload = json.loads(output)
+            self.assertEqual(payload["profile_id"], "unreal-pak")
+            self.assertEqual(payload["target"], "staging")
+            self.assertEqual(payload["summary"]["extractable"], 1)
+            self.assertEqual(payload["summary"]["tool_required"], 1)
+            self.assertEqual(payload["summary"]["archive_not_inspected"], 1)
+            self.assertTrue(any(
+                candidate["source_mod"] == "TextPak"
+                for candidate in payload["candidates"]
+            ))
+
     def test_cli_project_set_paths_preserves_profile_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

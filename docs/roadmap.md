@@ -65,6 +65,14 @@
 - Plan review gate, selected mod details, manifest/restore action surfaces, and
   tool status table. Done.
 
+## Phase 7
+
+- Unreal-first workbench direction. In progress.
+- `unreal-pak` profile metadata, sidecar grouping, and validation samples. Done.
+- Read-only translation inventory over staged output. Done.
+- WinUI Apply & Restore localization inventory bridge. Done.
+- Stellar Blade / CNS profile hardening and real-world fixture expansion. Next.
+
 ## Deferred
 
 - Nexus Mods login or downloads.

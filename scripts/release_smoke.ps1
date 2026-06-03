@@ -39,6 +39,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "family_apply_restore_smoke failed with exit code $LASTEXITCODE"
 }
 
+.\scripts\smoke_unreal_workbench.ps1
+if ($LASTEXITCODE -ne 0) {
+    throw "smoke_unreal_workbench failed with exit code $LASTEXITCODE"
+}
+
 if ($IncludeDesktop) {
     .\scripts\build_windows_shell.ps1
     if ($LASTEXITCODE -ne 0) {

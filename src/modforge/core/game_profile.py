@@ -522,17 +522,46 @@ def _code_builtin_profiles() -> list[GameProfile]:
         GameProfile(
             id="unreal-pak",
             display_name="Unreal PAK ~mods Workflow",
+            family="unreal",
+            description="Generic Unreal Engine staging profile for .pak/.ucas/.utoc ~mods workflows.",
             deployment_rules=[
-                DeploymentRule(source_pattern="*.pak", destination_root="Content/Paks/~mods"),
-                DeploymentRule(source_pattern="*.ucas", destination_root="Content/Paks/~mods"),
-                DeploymentRule(source_pattern="*.utoc", destination_root="Content/Paks/~mods"),
-                DeploymentRule(source_pattern="**/*.pak", destination_root="Content/Paks/~mods"),
-                DeploymentRule(source_pattern="**/*.ucas", destination_root="Content/Paks/~mods"),
-                DeploymentRule(source_pattern="**/*.utoc", destination_root="Content/Paks/~mods"),
-                DeploymentRule(source_pattern="**/*"),
+                DeploymentRule(
+                    id="archive-to-mods",
+                    source_patterns=["*.pak", "*.ucas", "*.utoc", "**/*.pak", "**/*.ucas", "**/*.utoc"],
+                    destination_root="Content/Paks/~mods",
+                    destination_pattern="{filename}",
+                    mode="archive_as_is",
+                    safety_tier="archive",
+                ),
+                DeploymentRule(
+                    id="extracted-or-loose-content",
+                    source_pattern="**/*",
+                    safety_tier="normal",
+                ),
             ],
             ignored_patterns=["**/.DS_Store", "**/Thumbs.db"],
             supported_containers=["loose_folder", "zip", "unreal_pak"],
+            sidecar_groups=[
+                SidecarGroupRule(
+                    id="unreal-sidecar",
+                    extensions=[".pak", ".ucas", ".utoc"],
+                    missing_behavior="warning",
+                )
+            ],
+            validation_samples=[
+                ValidationSample(
+                    source="CoolOutfit_P.pak",
+                    expected_destination="Content/Paks/~mods/CoolOutfit_P.pak",
+                ),
+                ValidationSample(
+                    source="CoolOutfit_P.ucas",
+                    expected_destination="Content/Paks/~mods/CoolOutfit_P.ucas",
+                ),
+                ValidationSample(
+                    source="Content/Localization/Game/en/Game.locres",
+                    expected_destination="Content/Localization/Game/en/Game.locres",
+                ),
+            ],
         ),
         GameProfile(
             id="sts2-mods",

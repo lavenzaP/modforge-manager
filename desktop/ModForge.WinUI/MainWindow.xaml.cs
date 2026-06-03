@@ -31,9 +31,10 @@ public sealed partial class MainWindow : Window
     private CoreProject? currentProject;
     private CorePlan? currentPlan;
     private CoreManifest? stagingManifest;
+    private CoreTranslationInventory? translationInventory;
     private CoreDoctorReport? doctorReport;
     private IReadOnlyList<CoreToolCheck> externalToolChecks = Array.Empty<CoreToolCheck>();
-    private string selectedProfileId = "mhw-reframework";
+    private string selectedProfileId = "unreal-pak";
     private string selectedGameFolder = "";
     private string selectedModsFolder = "";
     private WorkflowState workflowState = WorkflowState.NoProject;
@@ -281,6 +282,7 @@ public sealed partial class MainWindow : Window
             warnings.Clear();
             currentPlan = null;
             stagingManifest = null;
+            translationInventory = null;
             planReviewManuallyChecked = false;
             workflowState = WorkflowState.Scanned;
             SetStatus($"Scan complete: {mods.Count} mods found. No files were changed.");
@@ -306,6 +308,7 @@ public sealed partial class MainWindow : Window
                 workflowState = WorkflowState.PlanReady;
                 planReviewManuallyChecked = false;
                 stagingManifest = null;
+                translationInventory = null;
                 SetStatus($"{mod.Name} {(enabled ? "enabled" : "disabled")}. Dry-run plan rebuilt; review is required before staging.");
             }
             else
@@ -315,6 +318,7 @@ public sealed partial class MainWindow : Window
                 warnings.Clear();
                 currentPlan = null;
                 stagingManifest = null;
+                translationInventory = null;
                 planReviewManuallyChecked = false;
                 workflowState = WorkflowState.Scanned;
                 SetStatus($"{mod.Name} {(enabled ? "enabled" : "disabled")}. Scan refreshed; create a plan before staging.");
@@ -346,6 +350,7 @@ public sealed partial class MainWindow : Window
             warnings.AddRange(currentPlan.Warnings);
             ApplyConflictCountsToMods();
             stagingManifest = null;
+            translationInventory = null;
             planReviewManuallyChecked = false;
             workflowState = WorkflowState.PlanReady;
             SetStatus($"Dry-run plan ready: {currentPlan.Operations} operations, {currentPlan.Conflicts.Count} conflicts, {currentPlan.Warnings.Count} warnings.");
@@ -384,6 +389,7 @@ public sealed partial class MainWindow : Window
             workflowState = WorkflowState.PlanReady;
             planReviewManuallyChecked = false;
             stagingManifest = null;
+            translationInventory = null;
             SetStatus($"{preferred.Name} now has the highest priority. Review the updated plan before staging.");
             ShowPage("Plan");
         });
@@ -441,8 +447,33 @@ public sealed partial class MainWindow : Window
         await RunCoreActionAsync("Applying to staging through Python...", async () =>
         {
             stagingManifest = await pythonCore.ApplyStagingAsync(currentProject.ProjectFile);
+            translationInventory = null;
             workflowState = WorkflowState.Staged;
             SetStatus($"Applied to staging: {stagingManifest.Copied} copied, {stagingManifest.Overwritten} overwritten, {stagingManifest.Skipped} skipped.");
+            ShowPage("Apply & Restore");
+        });
+    }
+
+    private async Task RunTranslationInventoryAsync()
+    {
+        if (currentProject == null)
+        {
+            SetStatus("Open or create a project before running localization inventory.");
+            return;
+        }
+
+        if (!HasReached(WorkflowState.Staged))
+        {
+            SetStatus("Apply to staging before running localization inventory.");
+            return;
+        }
+
+        await RunCoreActionAsync("Building read-only localization inventory through Python...", async () =>
+        {
+            translationInventory = await pythonCore.BuildTranslationInventoryAsync(currentProject.ProjectFile);
+            SetStatus(
+                $"Localization inventory ready: {translationInventory.TotalCandidates} candidates, "
+                + $"{translationInventory.Extractable} extractable now, {translationInventory.ToolRequired} tool-required.");
             ShowPage("Apply & Restore");
         });
     }
@@ -999,15 +1030,18 @@ public sealed partial class MainWindow : Window
         right.Children.Add(ManifestPanel());
 
         var preview = PrimaryButton("Preview staged records", AccentBlue, async (_, _) => await PreviewStagingRecordsAsync());
+        var localization = PrimaryButton("Run localization inventory", AccentGreen, async (_, _) => await RunTranslationInventoryAsync());
         var gameWrites = PrimaryButton("Game writes locked", AccentAmber, (_, _) => SetStatus("Game-folder writes remain locked in this public preview."));
         var destructive = PrimaryButton("Destructive actions locked", AccentRed, (_, _) => SetStatus("Destructive recovery actions are not wired in this public preview."));
         preview.IsEnabled = CanPreviewStagingRecords();
+        localization.IsEnabled = CanRunTranslationInventory();
         gameWrites.IsEnabled = false;
         destructive.IsEnabled = false;
         right.Children.Add(Panel(Stack(
             Text("Staged output", 20, SemiBoldWeight, White),
-            Spaced("Inspect the manifest records created by staging. Game-folder writes and destructive recovery stay locked.", 13, Secondary),
-            ButtonRow(preview, gameWrites, destructive))));
+            Spaced("Inspect staged records and localization candidates. Game-folder writes and destructive recovery stay locked.", 13, Secondary),
+            ButtonRow(preview, localization, gameWrites, destructive))));
+        right.Children.Add(TranslationInventoryPanel());
         return grid;
     }
 
@@ -1327,6 +1361,51 @@ public sealed partial class MainWindow : Window
         }
 
         stack.Children.Add(ManifestRow("game-latest", "Game", "Available", "Tracks files written to the game folder."));
+        return Panel(stack);
+    }
+
+    private UIElement TranslationInventoryPanel()
+    {
+        var stack = Stack();
+        stack.Children.Add(Text("Localization inventory", 20, SemiBoldWeight, White));
+        if (!HasReached(WorkflowState.Staged))
+        {
+            stack.Children.Add(Spaced("Apply to staging first. Inventory only reads staged output and writes nothing to the game folder.", 13, Secondary));
+            return Panel(stack);
+        }
+
+        if (translationInventory == null)
+        {
+            stack.Children.Add(Spaced("No inventory has been run for the current staging result.", 13, Secondary));
+            stack.Children.Add(Spaced("Run inventory to find JSON/CSV/TXT strings, Unreal .locres resources, staged archives, and binary assets.", 13, Secondary));
+            return Panel(stack);
+        }
+
+        stack.Children.Add(Line("Candidates", translationInventory.TotalCandidates.ToString(), AccentGreen));
+        stack.Children.Add(Line("Extractable now", translationInventory.Extractable.ToString(), AccentGreen));
+        stack.Children.Add(Line("Tool required", translationInventory.ToolRequired.ToString(), translationInventory.ToolRequired > 0 ? AccentAmber : AccentGreen));
+        stack.Children.Add(Line("Archives staged", translationInventory.ArchiveNotInspected.ToString(), translationInventory.ArchiveNotInspected > 0 ? AccentAmber : AccentGreen));
+        if (translationInventory.Warnings.Count > 0)
+        {
+            stack.Children.Add(SectionTitle("Warnings"));
+            foreach (var warning in translationInventory.Warnings.Take(3))
+            {
+                stack.Children.Add(Spaced("- " + warning, 12, AccentAmber));
+            }
+        }
+
+        stack.Children.Add(HeaderRow(new[] { "Candidate", "Status", "Detail" }));
+        foreach (var candidate in translationInventory.Candidates.Take(8))
+        {
+            var detail = string.IsNullOrWhiteSpace(candidate.SourceMod)
+                ? candidate.Note
+                : $"{candidate.SourceMod}: {candidate.Note}";
+            stack.Children.Add(ToolRow(ShortPath(candidate.RelativePath, 72), InventoryStatusLabel(candidate.Status), detail));
+        }
+        if (translationInventory.Candidates.Count > 8)
+        {
+            stack.Children.Add(Spaced($"Showing 8 of {translationInventory.Candidates.Count} candidates.", 12, Secondary));
+        }
         return Panel(stack);
     }
 
@@ -1742,6 +1821,8 @@ public sealed partial class MainWindow : Window
 
     private bool CanPreviewStagingRecords() => currentProject != null && HasReached(WorkflowState.Staged) && !isBusy;
 
+    private bool CanRunTranslationInventory() => currentProject != null && HasReached(WorkflowState.Staged) && !isBusy;
+
     private string StagingActionLabel() => HasReached(WorkflowState.Staged) ? "Staging complete" : CanApplyToStaging() ? "Apply to staging" : "Apply to staging locked";
 
     private string GameWriteLabel()
@@ -1778,6 +1859,7 @@ public sealed partial class MainWindow : Window
         warnings.Clear();
         currentPlan = null;
         stagingManifest = null;
+        translationInventory = null;
         planReviewManuallyChecked = false;
         doctorReport = null;
         externalToolChecks = Array.Empty<CoreToolCheck>();
@@ -1881,19 +1963,27 @@ public sealed partial class MainWindow : Window
 
     private Brush StatusBrush(string status)
     {
-        if (IsOkStatus(status) || status.Equals("Configured", StringComparison.OrdinalIgnoreCase) || status.Equals("Idle", StringComparison.OrdinalIgnoreCase))
+        if (IsOkStatus(status)
+            || status.Equals("Configured", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Idle", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Extractable", StringComparison.OrdinalIgnoreCase))
         {
             return AccentGreen;
         }
 
         if (status.Equals("Warn", StringComparison.OrdinalIgnoreCase)
             || status.Equals("Warning", StringComparison.OrdinalIgnoreCase)
-            || status.Equals("Missing", StringComparison.OrdinalIgnoreCase))
+            || status.Equals("Missing", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Tool required", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Archive staged", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Review", StringComparison.OrdinalIgnoreCase))
         {
             return AccentAmber;
         }
 
-        if (status.Equals("Error", StringComparison.OrdinalIgnoreCase) || status.Equals("Failed", StringComparison.OrdinalIgnoreCase))
+        if (status.Equals("Error", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Failed", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("Binary asset", StringComparison.OrdinalIgnoreCase))
         {
             return AccentRed;
         }
@@ -1911,6 +2001,19 @@ public sealed partial class MainWindow : Window
     private static string DisplayStatus(string status)
     {
         return string.IsNullOrWhiteSpace(status) ? "Unknown" : status.ToUpperInvariant();
+    }
+
+    private static string InventoryStatusLabel(string status)
+    {
+        return status switch
+        {
+            "extractable" => "Extractable",
+            "tool_required" => "Tool required",
+            "archive_not_inspected" => "Archive staged",
+            "binary_asset" => "Binary asset",
+            "review" => "Review",
+            _ => DisplayName(status)
+        };
     }
 
     private static string DisplayName(string value)

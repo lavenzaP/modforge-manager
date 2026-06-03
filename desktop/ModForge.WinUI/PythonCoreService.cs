@@ -319,6 +319,51 @@ internal sealed class PythonCoreService
         return manifest;
     }
 
+    public async Task<CoreTranslationInventory> BuildTranslationInventoryAsync(
+        string projectFile,
+        CancellationToken cancellationToken = default)
+    {
+        using var payload = await RunJsonAsync(
+            new[] { "translation", "inventory", "--project-file", projectFile, "--target", "staging", "--json" },
+            cancellationToken);
+        var root = payload.RootElement;
+        var summary = root.GetProperty("summary");
+        var candidates = new List<CoreTranslationCandidate>();
+        if (root.TryGetProperty("candidates", out var candidateItems) && candidateItems.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in candidateItems.EnumerateArray())
+            {
+                candidates.Add(new CoreTranslationCandidate(
+                    RelativePath: GetString(item, "relative_path"),
+                    Kind: GetString(item, "kind"),
+                    Status: GetString(item, "status"),
+                    Extractor: GetString(item, "extractor"),
+                    Size: GetInt(item, "size"),
+                    SourceMod: GetString(item, "source_mod"),
+                    Note: GetString(item, "note")));
+            }
+        }
+
+        var warnings = root.TryGetProperty("warnings", out var warningItems) && warningItems.ValueKind == JsonValueKind.Array
+            ? warningItems.EnumerateArray().Select(item => item.GetString() ?? "").Where(item => item.Length > 0).ToList()
+            : new List<string>();
+
+        return new CoreTranslationInventory(
+            ProjectName: GetString(root, "project_name"),
+            ProfileId: GetString(root, "profile_id"),
+            Target: GetString(root, "target"),
+            Root: GetString(root, "root"),
+            ScannedFiles: GetInt(summary, "scanned_files"),
+            TotalCandidates: GetInt(summary, "total_candidates"),
+            Extractable: GetInt(summary, "extractable"),
+            ToolRequired: GetInt(summary, "tool_required"),
+            ArchiveNotInspected: GetInt(summary, "archive_not_inspected"),
+            BinaryAssets: GetInt(summary, "binary_asset"),
+            Review: GetInt(summary, "review"),
+            Candidates: candidates,
+            Warnings: warnings);
+    }
+
     private async Task<CoreProject> RunProjectCommandAsync(string projectFile, CancellationToken cancellationToken)
     {
         using var payload = await RunJsonAsync(
@@ -554,10 +599,10 @@ internal sealed class PythonCoreService
     {
         return id switch
         {
-            "mhw-reframework" => 100,
-            "stellar-blade.experimental" => 95,
-            "sts2-mods" => 90,
-            "unreal-pak" => 80,
+            "unreal-pak" => 110,
+            "stellar-blade.experimental" => 105,
+            "mhw-reframework" => 90,
+            "sts2-mods" => 80,
             "godot-pck" => 70,
             "generic-folder" => 60,
             _ => 0
@@ -665,3 +710,27 @@ internal sealed record CoreManifestRecord(
     string SourceMod,
     string Status,
     string BackupPath);
+
+internal sealed record CoreTranslationInventory(
+    string ProjectName,
+    string ProfileId,
+    string Target,
+    string Root,
+    int ScannedFiles,
+    int TotalCandidates,
+    int Extractable,
+    int ToolRequired,
+    int ArchiveNotInspected,
+    int BinaryAssets,
+    int Review,
+    IReadOnlyList<CoreTranslationCandidate> Candidates,
+    IReadOnlyList<string> Warnings);
+
+internal sealed record CoreTranslationCandidate(
+    string RelativePath,
+    string Kind,
+    string Status,
+    string Extractor,
+    int Size,
+    string SourceMod,
+    string Note);

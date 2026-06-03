@@ -1,18 +1,20 @@
-# ModForge Manager
+﻿# ModForge Manager
 
-[한국어 README](README.ko.md)
+[Korean README](README.ko.md)
 
-ModForge Manager is a Windows-first desktop and CLI toolkit for organizing game
-mod projects, scanning mod folders, previewing deployments, and generating safe
-conflict reports.
+ModForge Manager is a Windows-first desktop and CLI toolkit for Unreal-first
+mod staging workflows. It organizes local mod projects, scans mod folders,
+previews deployments, generates safe conflict reports, and inspects staged
+output for localization candidates.
 
-The first version intentionally does not replace Mod Organizer 2, Vortex, or
-Nexus Mods. It focuses on local project structure, dry-run planning, external
-tool checks, and fake-fixture-tested core behavior.
+The current product direction is Unreal-first, not "every game at once." The
+generic Unreal `~mods` workflow is the primary candidate, Stellar Blade / CNS is
+the representative experimental profile, and REFramework/Godot/STS2 support is
+kept as regression coverage while the Unreal workbench matures.
 
 ## Current Status
 
-Status: MVP release candidate, staging-first public preview.
+Status: Unreal-first workbench preview, staging-first public baseline.
 
 The Python CLI/core is the tested backend. The WinUI 3 shell is the primary
 Windows desktop candidate and uses a real Python bridge for supported actions:
@@ -23,6 +25,12 @@ to a managed staging directory.
 WinUI game-folder apply is intentionally locked for now. Game apply and restore
 exist in the Python CLI/core, but the public desktop baseline is staging-first
 until the GUI workflow is further hardened.
+
+The WinUI shell and CLI can now run a read-only localization inventory against
+the staged output. This detects JSON/CSV/TXT files that can be exported today,
+Unreal `.locres/.locmeta` resources that need a future extractor, staged
+`.pak/.ucas/.utoc` archives whose internals are not inspected yet, and binary
+Unreal assets that are explicitly not edited.
 
 Python is not bundled, no installer is shipped, and the project does not provide
 Nexus Mods downloads, encrypted PAK handling, DRM or anti-tamper bypass, asset
@@ -50,6 +58,8 @@ the project open source.
 - Apply to the game root with backups, then restore all files or selected
   manifest paths.
 - Extract basic JSON/CSV/TXT strings into a translation CSV.
+- Inspect staged output for translation and Unreal localization candidates
+  without touching the game folder.
 - Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
   toggling enabled state, changing priority, planning, reporting, applying, and
   restoring.
@@ -78,19 +88,23 @@ The WinUI bridge may run read-only `doctor --json` and `tools check --json`
 through `PythonCoreService`. It must not wire `apply-game` or `restore` in the
 WinUI bridge.
 
-## MVP RC Target
+## Unreal-First Target
 
-The MVP release-candidate baseline certifies three core mod families:
+The active product target is an Unreal-first Workbench v0:
 
-- REFramework/nativePC mods, including Monster Hunter Wilds style layouts.
-- Unreal `~mods` archive mods, including `.pak`, `.ucas`, and `.utoc` files.
-- Godot/Slay the Spire 2 mods-folder workflows, including `.pck` files.
+- Generic Unreal `~mods` archive staging for `.pak`, `.ucas`, and `.utoc`.
+- Stellar Blade / CNS as an experimental profile for real-world Unreal path
+  complexity, including `SB/**`, `~mods`, JSON sidecars, and UE4SS/runtime
+  review gates.
+- Read-only localization inventory after staging, with clear labels for
+  extractable text, Unreal localization resources, staged archives, and binary
+  assets.
 
-"Perfect support" for this MVP means safe local scan, plan, conflict report,
-staging apply, game apply, manifest inspection, restore preview, restore,
-doctor/audit checks, and documentation for synthetic fixtures in those families.
-It does not mean Nexus downloads, encrypted PAK support, archive repacking,
-arbitrary asset editing, a virtual filesystem, or installer generation.
+REFramework/nativePC and Godot/Slay the Spire 2 fixture coverage remains in the
+test suite, but those families are no longer the first product surface for new
+workflow design. This preview still does not mean Nexus downloads, encrypted PAK
+support, archive repacking, arbitrary asset editing, a virtual filesystem, or
+installer generation.
 
 Current freeze docs:
 
@@ -159,6 +173,7 @@ python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --p
 python -m modforge project audit
 python -m modforge project export --out .modforge\project-export.json
 python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
+python -m modforge translation inventory --project-file modforge.project.json --target staging --json
 ```
 
 Run the guided safe workflow on a temporary synthetic Monster Hunter Wilds /
