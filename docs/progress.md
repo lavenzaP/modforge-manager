@@ -346,3 +346,5 @@
   without committing real mod archives.
 - Added an `--output` option so real-mod intake runs can save a JSON report
   artifact while leaving the inspected source untouched.
+- Added a read-only real-mod intake helper script that saves reports outside the
+  inspected source by default and prints a compact review summary.

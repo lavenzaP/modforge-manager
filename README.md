@@ -177,12 +177,14 @@ python -m modforge project audit
 python -m modforge project export --out .modforge\project-export.json
 python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
 python -m modforge translation inventory --project-file modforge.project.json --target staging --json
-python -m modforge unreal intake --profile stellar-blade.experimental --source C:\ModForge\SampleUnrealMod --output .modforge\intake-report.json --json
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_real_unreal_intake.ps1 -Source C:\ModForge\SampleUnrealMod
 ```
 
-For real mod intake, choose an `--output` path outside the inspected mod folder
-or archive path. ModForge refuses to overwrite the source, write the report
-inside a folder source, or replace an existing report file.
+The real-mod intake helper is read-only and writes its JSON report to
+`Documents\ModForge Manager\Reports` by default. If you pass `-Output`, choose a
+path outside the inspected mod folder or archive path. ModForge refuses to
+overwrite the source, write the report inside a folder source, or replace an
+existing report file.
 
 Run the guided safe workflow on a temporary synthetic Monster Hunter Wilds /
 REFramework fixture:

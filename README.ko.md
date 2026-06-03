@@ -85,8 +85,13 @@ python -m modforge scan-mods
 python -m modforge plan --summary
 python -m modforge apply-staging --yes
 python -m modforge translation inventory --target staging --json
-python -m modforge unreal intake --profile stellar-blade.experimental --source C:\ModForge\SampleUnrealMod --output .modforge\intake-report.json --json
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_real_unreal_intake.ps1 -Source C:\ModForge\SampleUnrealMod
 ```
+
+실제 모드 intake helper는 read-only로 동작하며 기본 보고서 JSON을
+`Documents\ModForge Manager\Reports` 아래에 저장합니다. `-Output`을 직접
+지정할 경우 검사 중인 모드 폴더나 압축 파일 안쪽이 아닌 별도 위치를
+사용하세요.
 
 WinUI 3 셸 빌드/실행:
 

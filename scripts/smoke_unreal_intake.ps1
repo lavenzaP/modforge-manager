@@ -6,6 +6,7 @@ $env:PYTHONPATH = Join-Path $repo "src"
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("modforge-unreal-intake-" + [guid]::NewGuid().ToString("N"))
 $source = Join-Path $temp "mixed"
 $reportPath = Join-Path $temp "reports\intake.json"
+$helperReportPath = Join-Path $temp "reports\helper-intake.json"
 New-Item -ItemType Directory -Path $source | Out-Null
 
 function Write-Stub {
@@ -62,6 +63,19 @@ try {
     $after = Get-ChildItem -Path $source -Recurse -File | ForEach-Object { $_.FullName } | Sort-Object
     if (@($before).Count -ne @($after).Count) {
         throw "Intake report changed file count."
+    }
+
+    & (Join-Path $repo "scripts\run_real_unreal_intake.ps1") -Source $source -Output $helperReportPath | Out-Host
+    if (-not (Test-Path -LiteralPath $helperReportPath)) {
+        throw "Expected helper intake report file to be written."
+    }
+    $helperSaved = Get-Content -LiteralPath $helperReportPath -Raw | ConvertFrom-Json
+    if ($helperSaved.profile_id -ne "stellar-blade.experimental") {
+        throw "Helper intake report used unexpected profile: $($helperSaved.profile_id)"
+    }
+    $afterHelper = Get-ChildItem -Path $source -Recurse -File | ForEach-Object { $_.FullName } | Sort-Object
+    if (@($before).Count -ne @($afterHelper).Count) {
+        throw "Real intake helper changed file count."
     }
 
     Write-Host "Unreal intake smoke passed: synthetic Stellar Blade/CNS package classified read-only."
