@@ -33,6 +33,7 @@ from modforge.reports.markdown import render_deployment_report
 from modforge.tools.checker import check_tools
 from modforge.translation.exporter import extract_strings, write_entries_csv
 from modforge.translation.inventory import build_translation_inventory, format_translation_inventory
+from modforge.unreal.intake import build_unreal_intake_report, format_unreal_intake_report
 
 DEFAULT_PROJECT_FILE = Path("modforge.project.json")
 
@@ -264,6 +265,17 @@ def build_parser() -> argparse.ArgumentParser:
     translation_inventory.add_argument("--source", type=Path, help="Inspect this folder instead of a project target")
     translation_inventory.add_argument("--json", action="store_true")
     translation_inventory.set_defaults(handler=handle_translation_inventory)
+
+    unreal = subcommands.add_parser("unreal", help="Unreal workflow helpers")
+    unreal_subcommands = unreal.add_subparsers(required=True)
+    unreal_intake = unreal_subcommands.add_parser(
+        "intake",
+        help="Read-only intake report for an Unreal mod package",
+    )
+    unreal_intake.add_argument("--profile", default="stellar-blade.experimental", help="Game profile id or JSON file")
+    unreal_intake.add_argument("--source", required=True, type=Path, help="Mod folder, zip, or single file to inspect")
+    unreal_intake.add_argument("--json", action="store_true")
+    unreal_intake.set_defaults(handler=handle_unreal_intake)
 
     return parser
 
@@ -679,6 +691,16 @@ def handle_translation_inventory(args: argparse.Namespace) -> int:
     else:
         print(format_translation_inventory(report))
     return 0
+
+
+def handle_unreal_intake(args: argparse.Namespace) -> int:
+    profile = builtin_profile(args.profile)
+    report = build_unreal_intake_report(profile, args.source)
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_unreal_intake_report(report))
+    return 0 if report.ok else 1
 
 
 def format_plan_summary(summary: dict[str, object]) -> str:

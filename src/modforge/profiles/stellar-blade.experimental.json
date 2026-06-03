@@ -12,6 +12,30 @@
   },
   "deployment_rules": [
     {
+      "id": "rooted-ue4ss-runtime-folder",
+      "source_patterns": ["SB/Binaries/Win64/ue4ss/**", "SB/Binaries/Win64/UE4SS/**"],
+      "destination_root": "game_root",
+      "destination_pattern": "{relative_path}",
+      "priority": -30,
+      "mode": "preserve_structure",
+      "safety_tier": "runtime-file",
+      "requires_extra_confirmation": true
+    },
+    {
+      "id": "runtime-dll-rooted",
+      "source_patterns": [
+        "SB/Binaries/Win64/dwmapi.dll",
+        "SB/Binaries/Win64/UE4SS.dll",
+        "SB/Binaries/Win64/xinput*.dll",
+        "SB/Binaries/Win64/version.dll"
+      ],
+      "destination_root": "game_root",
+      "destination_pattern": "{relative_path}",
+      "priority": -20,
+      "safety_tier": "dll-high-risk",
+      "requires_extra_confirmation": true
+    },
+    {
       "id": "existing-sb-layout",
       "source_patterns": ["SB/**"],
       "destination_root": "game_root",
@@ -30,8 +54,8 @@
       "requires_extra_confirmation": true
     },
     {
-      "id": "runtime-dll",
-      "source_patterns": ["dwmapi.dll", "xinput*.dll", "version.dll"],
+      "id": "runtime-dll-root",
+      "source_patterns": ["dwmapi.dll", "UE4SS.dll", "xinput*.dll", "version.dll"],
       "destination_root": "binaries_win64",
       "destination_pattern": "{filename}",
       "priority": 20,
@@ -92,6 +116,14 @@
     {
       "source": "dwmapi.dll",
       "expected_destination": "SB/Binaries/Win64/dwmapi.dll"
+    },
+    {
+      "source": "UE4SS.dll",
+      "expected_destination": "SB/Binaries/Win64/UE4SS.dll"
+    },
+    {
+      "source": "SB/Binaries/Win64/ue4ss/Mods/CNS/main.lua",
+      "expected_destination": "SB/Binaries/Win64/ue4ss/Mods/CNS/main.lua"
     },
     {
       "source": "SB/Content/Paks/~mods/AlreadyPacked_P.pak",

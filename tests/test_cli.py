@@ -160,6 +160,37 @@ class CliTests(unittest.TestCase):
                 for candidate in payload["candidates"]
             ))
 
+    def test_cli_unreal_intake_reports_stellar_blade_package_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "sample"
+            source.mkdir()
+            for suffix in [".pak", ".ucas"]:
+                (source / f"Broken_P{suffix}").write_bytes(b"stub")
+            (source / "dwmapi.dll").write_bytes(b"dll")
+            (source / "unknown.bin").write_bytes(b"unknown")
+
+            code, output = self.run_cli(
+                [
+                    "unreal",
+                    "intake",
+                    "--profile",
+                    "stellar-blade.experimental",
+                    "--source",
+                    str(source),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(code, 0)
+            payload = json.loads(output)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["profile_id"], "stellar-blade.experimental")
+            self.assertEqual(payload["summary"]["high_risk_files"], 1)
+            self.assertEqual(payload["summary"]["unmanaged_files"], 1)
+            self.assertEqual(payload["sidecar_groups"][0]["missing_extensions"], [".utoc"])
+            self.assertTrue(any("missing .utoc" in warning for warning in payload["warnings"]))
+
     def test_cli_project_set_paths_preserves_profile_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -60,6 +60,9 @@ the project open source.
 - Extract basic JSON/CSV/TXT strings into a translation CSV.
 - Inspect staged output for translation and Unreal localization candidates
   without touching the game folder.
+- Run a read-only Unreal intake report before real mod testing to preview
+  Stellar Blade/CNS style mappings, sidecar groups, runtime-file risk, LogicMods
+  candidates, and unmanaged files.
 - Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
   toggling enabled state, changing priority, planning, reporting, applying, and
   restoring.
@@ -174,6 +177,7 @@ python -m modforge project audit
 python -m modforge project export --out .modforge\project-export.json
 python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
 python -m modforge translation inventory --project-file modforge.project.json --target staging --json
+python -m modforge unreal intake --profile stellar-blade.experimental --source C:\ModForge\SampleUnrealMod --json
 ```
 
 Run the guided safe workflow on a temporary synthetic Monster Hunter Wilds /

@@ -71,7 +71,8 @@
 - `unreal-pak` profile metadata, sidecar grouping, and validation samples. Done.
 - Read-only translation inventory over staged output. Done.
 - WinUI Apply & Restore localization inventory bridge. Done.
-- Stellar Blade / CNS profile hardening and real-world fixture expansion. Next.
+- Read-only Unreal intake report for Stellar Blade/CNS package shapes. In progress.
+- Stellar Blade / CNS profile hardening and synthetic fixture expansion. In progress.
 
 ## Deferred
 

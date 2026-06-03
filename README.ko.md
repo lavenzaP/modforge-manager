@@ -85,6 +85,7 @@ python -m modforge scan-mods
 python -m modforge plan --summary
 python -m modforge apply-staging --yes
 python -m modforge translation inventory --target staging --json
+python -m modforge unreal intake --profile stellar-blade.experimental --source C:\ModForge\SampleUnrealMod --json
 ```
 
 WinUI 3 셸 빌드/실행:

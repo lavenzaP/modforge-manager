@@ -86,6 +86,9 @@ class GameProfileTests(unittest.TestCase):
                     "CoolOutfit_P.utoc",
                     "CoolOutfit_P.json",
                     "dwmapi.dll",
+                    "UE4SS.dll",
+                    "SB/Binaries/Win64/ue4ss/Mods/CNS/main.lua",
+                    "SB/Binaries/Win64/version.dll",
                     "SB/Content/Paks/~mods/AlreadyPacked_P.pak",
                 ],
             )
@@ -94,7 +97,17 @@ class GameProfileTests(unittest.TestCase):
         self.assertEqual(mappings["CoolOutfit_P.pak"].destination_path, "SB/Content/Paks/~mods/CoolOutfit_P.pak")
         self.assertEqual(mappings["CoolOutfit_P.json"].destination_path, "SB/Content/Paks/~mods/CoolOutfit_P.json")
         self.assertEqual(mappings["dwmapi.dll"].destination_path, "SB/Binaries/Win64/dwmapi.dll")
+        self.assertEqual(mappings["UE4SS.dll"].destination_path, "SB/Binaries/Win64/UE4SS.dll")
         self.assertIn("High-risk destination", mappings["dwmapi.dll"].warnings[0])
+        self.assertEqual(
+            mappings["SB/Binaries/Win64/ue4ss/Mods/CNS/main.lua"].destination_path,
+            "SB/Binaries/Win64/ue4ss/Mods/CNS/main.lua",
+        )
+        self.assertEqual(
+            mappings["SB/Binaries/Win64/version.dll"].destination_path,
+            "SB/Binaries/Win64/version.dll",
+        )
+        self.assertTrue(mappings["SB/Binaries/Win64/version.dll"].warnings)
         self.assertEqual(
             mappings["SB/Content/Paks/~mods/AlreadyPacked_P.pak"].destination_path,
             "SB/Content/Paks/~mods/AlreadyPacked_P.pak",

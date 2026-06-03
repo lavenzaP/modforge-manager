@@ -332,3 +332,15 @@
 - Wired WinUI Apply & Restore to run the read-only localization inventory
   through `PythonCoreService` and display the candidate summary.
 - Updated English/Korean README and workbench docs for the Unreal-first pivot.
+
+## Unreal Intake / Stellar Blade CNS Hardening
+
+- Added a read-only `unreal intake` CLI report for folders, ZIPs, or single
+  package files before any real mod install test.
+- Classified Stellar Blade/CNS style flat sidecar archives, rooted `SB/**`
+  packages, UE4SS runtime folders, runtime DLL-like files, LogicMods candidates,
+  and unmanaged files.
+- Hardened `stellar-blade.experimental` so rooted UE4SS/runtime DLL paths are
+  reviewed as high-risk instead of being hidden by broad `SB/**` mapping.
+- Added synthetic temp-fixture tests and a smoke script for intake reporting
+  without committing real mod archives.
