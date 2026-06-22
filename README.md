@@ -38,22 +38,22 @@ Not working yet:
 
 ## Default Paths
 
-Game profiles are saved inside the ModForge Manager folder:
+Game profiles are saved next to the launcher executable:
 
 ```text
-%USERPROFILE%\Documents\ModForge Manager\games.json
+<ModForge folder>\games.json
 ```
 
 Each game gets a default mods folder like this:
 
 ```text
-%USERPROFILE%\Documents\ModForge Manager\Games\<Game Name>\Mods
+<ModForge folder>\Games\<Game Name>\Mods
 ```
 
 Apply manifests and backups live next to that game's mods folder:
 
 ```text
-%USERPROFILE%\Documents\ModForge Manager\Games\<Game Name>\.modforge
+<ModForge folder>\Games\<Game Name>\.modforge
 ```
 
 ## Build
@@ -89,19 +89,19 @@ temporary ModForge mods folder without touching real game files.
 Scan a mods folder:
 
 ```powershell
-dist\ModForge.Launcher\ModForge.Launcher.exe --smoke --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
+dist\ModForge.Launcher\ModForge.Launcher.exe --smoke --mods "dist\ModForge.Launcher\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
 Apply enabled mods:
 
 ```powershell
-dist\ModForge.Launcher\ModForge.Launcher.exe --apply --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
+dist\ModForge.Launcher\ModForge.Launcher.exe --apply --mods "dist\ModForge.Launcher\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
 Undo the latest apply:
 
 ```powershell
-dist\ModForge.Launcher\ModForge.Launcher.exe --undo --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
+dist\ModForge.Launcher\ModForge.Launcher.exe --undo --mods "dist\ModForge.Launcher\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
 ## Safety Model

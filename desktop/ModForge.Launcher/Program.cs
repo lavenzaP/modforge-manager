@@ -1026,10 +1026,14 @@ internal sealed class GameProfileConfig
 
 internal static class AppPaths
 {
-    public static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ModForge Manager");
+    public static readonly string Root = new DirectoryInfo(AppContext.BaseDirectory).FullName;
     public static readonly string GamesRoot = Path.Combine(Root, "Games");
     public static readonly string ConfigPath = Path.Combine(Root, "games.json");
-    public static readonly string LegacyConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ModForge Manager", "games.json");
+    public static readonly string[] LegacyConfigPaths =
+    [
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ModForge Manager", "games.json"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ModForge Manager", "games.json"),
+    ];
 
     public static string DefaultModsPathFor(string gameName) => Path.Combine(GamesRoot, SafeName(gameName), "Mods");
 
@@ -1052,7 +1056,10 @@ internal static class GameProfileStore
 
         if (!File.Exists(ConfigPath))
         {
-            var legacyGames = TryLoad(AppPaths.LegacyConfigPath);
+            var legacyGames = AppPaths.LegacyConfigPaths
+                .Where(path => !Path.GetFullPath(path).Equals(Path.GetFullPath(ConfigPath), StringComparison.OrdinalIgnoreCase))
+                .Select(TryLoad)
+                .FirstOrDefault(games => games.Count > 0) ?? [];
             if (legacyGames.Count > 0)
             {
                 Save(legacyGames, legacyGames.FirstOrDefault(game => game.Selected) ?? legacyGames[0]);

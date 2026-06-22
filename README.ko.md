@@ -36,22 +36,22 @@ ModForge Manager는 Windows용 Unreal Engine 게임 모드 매니저입니다.
 
 ## 기본 경로
 
-게임 프로필은 ModForge Manager 폴더 안에 저장됩니다.
+게임 프로필은 런처 exe가 있는 폴더에 저장됩니다.
 
 ```text
-%USERPROFILE%\Documents\ModForge Manager\games.json
+<ModForge 폴더>\games.json
 ```
 
 게임별 기본 모드 폴더:
 
 ```text
-%USERPROFILE%\Documents\ModForge Manager\Games\<게임 이름>\Mods
+<ModForge 폴더>\Games\<게임 이름>\Mods
 ```
 
 적용 manifest와 백업 위치:
 
 ```text
-%USERPROFILE%\Documents\ModForge Manager\Games\<게임 이름>\.modforge
+<ModForge 폴더>\Games\<게임 이름>\.modforge
 ```
 
 ## 빌드
@@ -87,19 +87,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_launcher.ps1
 모드 폴더 스캔:
 
 ```powershell
-dist\ModForge.Launcher\ModForge.Launcher.exe --smoke --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
+dist\ModForge.Launcher\ModForge.Launcher.exe --smoke --mods "dist\ModForge.Launcher\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
 활성화된 모드 적용:
 
 ```powershell
-dist\ModForge.Launcher\ModForge.Launcher.exe --apply --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
+dist\ModForge.Launcher\ModForge.Launcher.exe --apply --mods "dist\ModForge.Launcher\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
 최신 적용 되돌리기:
 
 ```powershell
-dist\ModForge.Launcher\ModForge.Launcher.exe --undo --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
+dist\ModForge.Launcher\ModForge.Launcher.exe --undo --mods "dist\ModForge.Launcher\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
 ## 안전 모델
