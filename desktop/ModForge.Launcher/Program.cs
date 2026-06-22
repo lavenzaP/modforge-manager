@@ -10,7 +10,7 @@ namespace ModForge.Launcher;
 internal static class Program
 {
     internal const string DefaultGameName = "Stellar Blade";
-    internal static readonly string DefaultModsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ModForge Manager", "Games", DefaultGameName, "Mods");
+    internal static readonly string DefaultModsPath = AppPaths.DefaultModsPathFor(DefaultGameName);
     internal const string DefaultGamePath = @"C:\Program Files (x86)\Steam\steamapps\common\StellarBlade";
 
     [STAThread]
@@ -146,6 +146,8 @@ internal static class Program
             Directory.CreateDirectory(steamGame);
             File.WriteAllText(Path.Combine(steamApps, "appmanifest_1623730.acf"), "\"AppState\"\n{\n\t\"appid\"\t\t\"1623730\"\n\t\"installdir\"\t\t\"Palworld\"\n}\n");
             if (MainForm.FindSteamAppId(steamGame) != "1623730") return 16;
+            if (!AppPaths.ConfigPath.StartsWith(AppPaths.Root, StringComparison.OrdinalIgnoreCase)) return 17;
+            if (!Program.DefaultModsPath.StartsWith(AppPaths.GamesRoot, StringComparison.OrdinalIgnoreCase)) return 18;
 
             var importMods = Path.Combine(root, "import-mods");
             var looseMod = Path.Combine(root, "loose-source", "LooseMod");
@@ -1022,23 +1024,40 @@ internal sealed class GameProfileConfig
     public List<GameProfile> Games { get; set; } = [];
 }
 
+internal static class AppPaths
+{
+    public static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ModForge Manager");
+    public static readonly string GamesRoot = Path.Combine(Root, "Games");
+    public static readonly string ConfigPath = Path.Combine(Root, "games.json");
+    public static readonly string LegacyConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ModForge Manager", "games.json");
+
+    public static string DefaultModsPathFor(string gameName) => Path.Combine(GamesRoot, SafeName(gameName), "Mods");
+
+    public static string SafeName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
+        var cleaned = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray()).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? "Unreal Game" : cleaned;
+    }
+}
+
 internal static class GameProfileStore
 {
-    private static readonly string ConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ModForge Manager", "games.json");
+    private static string ConfigPath => AppPaths.ConfigPath;
 
     public static List<GameProfile> Load()
     {
-        try
+        var games = TryLoad(ConfigPath);
+        if (games.Count > 0) return games;
+
+        if (!File.Exists(ConfigPath))
         {
-            if (File.Exists(ConfigPath))
+            var legacyGames = TryLoad(AppPaths.LegacyConfigPath);
+            if (legacyGames.Count > 0)
             {
-                var config = JsonSerializer.Deserialize<GameProfileConfig>(File.ReadAllText(ConfigPath));
-                var games = config?.Games.Where(IsValid).ToList() ?? [];
-                if (games.Count > 0) return games;
+                Save(legacyGames, legacyGames.FirstOrDefault(game => game.Selected) ?? legacyGames[0]);
+                return legacyGames;
             }
-        }
-        catch (JsonException)
-        {
         }
 
         return
@@ -1060,15 +1079,22 @@ internal static class GameProfileStore
         File.WriteAllText(ConfigPath, JsonSerializer.Serialize(new GameProfileConfig { Games = games.Where(IsValid).ToList() }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    public static string DefaultModsPathFor(string gameName) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ModForge Manager", "Games", SafeName(gameName), "Mods");
+    public static string DefaultModsPathFor(string gameName) => AppPaths.DefaultModsPathFor(gameName);
 
     private static bool IsValid(GameProfile profile) => !string.IsNullOrWhiteSpace(profile.Name) && !string.IsNullOrWhiteSpace(profile.GamePath) && !string.IsNullOrWhiteSpace(profile.ModsPath);
 
-    private static string SafeName(string value)
+    private static List<GameProfile> TryLoad(string path)
     {
-        var invalid = Path.GetInvalidFileNameChars().ToHashSet();
-        var cleaned = new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray()).Trim();
-        return string.IsNullOrWhiteSpace(cleaned) ? "Unreal Game" : cleaned;
+        try
+        {
+            if (!File.Exists(path)) return [];
+            var config = JsonSerializer.Deserialize<GameProfileConfig>(File.ReadAllText(path));
+            return config?.Games.Where(IsValid).ToList() ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 }
 

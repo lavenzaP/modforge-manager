@@ -36,10 +36,10 @@ ModForge Manager는 Windows용 Unreal Engine 게임 모드 매니저입니다.
 
 ## 기본 경로
 
-게임 프로필 저장 위치:
+게임 프로필은 ModForge Manager 폴더 안에 저장됩니다.
 
 ```text
-%APPDATA%\ModForge Manager\games.json
+%USERPROFILE%\Documents\ModForge Manager\games.json
 ```
 
 게임별 기본 모드 폴더:

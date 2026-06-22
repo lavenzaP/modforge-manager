@@ -38,10 +38,10 @@ Not working yet:
 
 ## Default Paths
 
-Game profiles are saved here:
+Game profiles are saved inside the ModForge Manager folder:
 
 ```text
-%APPDATA%\ModForge Manager\games.json
+%USERPROFILE%\Documents\ModForge Manager\games.json
 ```
 
 Each game gets a default mods folder like this:
