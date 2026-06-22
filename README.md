@@ -123,3 +123,7 @@ scripts/smoke_launcher.ps1
 
 Older Python, WPF, and WinUI experiments have been removed from the active
 product path.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

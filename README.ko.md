@@ -119,3 +119,7 @@ scripts/smoke_launcher.ps1
 ```
 
 이전 Python, WPF, WinUI 실험 코드는 현재 제품 경로에서 제거했습니다.
+
+## 라이선스
+
+MIT입니다. 자세한 내용은 [LICENSE](LICENSE)를 확인하세요.
