@@ -1,39 +1,17 @@
 # Contributing
 
-ModForge Manager is in an MVP release-candidate phase. Contributions should keep
-the project safe, small, and testable.
+ModForge Manager is currently a small Windows-first C# WinForms launcher.
 
-## Ground Rules
-
-- Use synthetic fixtures only.
-- Do not commit real game files, real mod archives, crash dumps, logs, or
-  generated binaries.
-- Do not bundle third-party external tools.
-- Do not add code for DRM, anti-tamper, account, or encryption bypass.
-- Keep write operations dry-run-first, staging-first, and manifest-bound.
-- Keep public wording honest: this is not an MO2/Vortex replacement.
-
-## Before Opening a Pull Request
-
-Run the relevant checks:
+Before sending changes:
 
 ```powershell
-python -m unittest discover -s tests
-python -m compileall -q src tests
-powershell -ExecutionPolicy Bypass -File scripts\public_staging_smoke.ps1
-git diff --check
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_launcher.ps1
 ```
 
-If you changed linted Python code and the dev dependencies are installed, also
-run:
+Keep changes boring:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\lint.ps1
-```
-
-## Fixture Policy
-
-Fixtures must be fake and minimal. If a test needs an engine-like extension,
-prefer a tiny synthetic file under `tests/fixtures` and document why it exists.
-Do not copy files from an installed game or downloaded mod.
-
+- Prefer the existing `desktop/ModForge.Launcher` project unless there is a real reason to split.
+- Keep file writes manifest-bound and undoable.
+- Keep user state in ModForge-owned files such as `modforge-state.json`.
+- Do not reintroduce Python, WPF, WinUI, Rust, or new dependencies without a clear decision.
+- Do not commit real mod archives, game files, DLLs, EXEs, crash dumps, or generated release output.

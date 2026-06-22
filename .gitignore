@@ -1,42 +1,28 @@
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
 build/
 dist/
-*.egg-info/
-.venv/
-venv/
 .dotnet_cli_home/
 .nuget/
-.codex_tmp*/
-.idea/
-.vscode/
+.modforge/
+.codex-backups/
 .vs/
-*.suo
-*.user
-*.rsuser
-*.sln.docstates
-*.pdb
-*.nupkg
-*.snupkg
+.vscode/
+.idea/
+docs/goals/
 
-# .NET desktop outputs
 desktop/**/bin/
 desktop/**/obj/
 desktop/**/TestResults/
 desktop/**/publish/
 
-# Local app state
-modforge.project.json
-.modforge/
+*.user
+*.suo
+*.rsuser
+*.pdb
+*.nupkg
+*.snupkg
 *.log
 
-# Avoid accidentally committing real game/mod payloads.
+# Avoid committing real game/mod payloads.
 *.7z
 *.rar
 *.zip
@@ -46,15 +32,7 @@ modforge.project.json
 *.pck
 *.uasset
 *.uexp
-*.ba2
-*.bsa
 *.dll
 *.exe
 *.mdmp
 *.dmp
-
-# Synthetic test fixtures may use engine-like extensions.
-!tests/fixtures/**/*.pak
-!tests/fixtures/**/*.ucas
-!tests/fixtures/**/*.utoc
-!tests/fixtures/**/*.pck

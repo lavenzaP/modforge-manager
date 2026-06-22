@@ -1,335 +1,125 @@
-﻿# ModForge Manager
+# ModForge Manager
 
 [Korean README](README.ko.md)
 
-ModForge Manager is a Windows-first desktop and CLI toolkit for Unreal-first
-mod staging workflows. It organizes local mod projects, scans mod folders,
-previews deployments, generates safe conflict reports, and inspects staged
-output for localization candidates.
+ModForge Manager is a small Windows mod manager for Unreal Engine games.
 
-The current product direction is Unreal-first, not "every game at once." The
-generic Unreal `~mods` workflow is the primary candidate, Stellar Blade / CNS is
-the representative experimental profile, and REFramework/Godot/STS2 support is
-kept as regression coverage while the Unreal workbench matures.
+It is currently focused on the basic loop that has to work before anything
+else: add mods, turn them on or off, apply the current list to the game folder,
+and launch the game through Steam when possible.
 
 ## Current Status
 
-Status: Unreal-first workbench preview, staging-first public baseline.
+This repository is being rebuilt around a simple C# WinForms launcher.
 
-The Python CLI/core is the tested backend. The WinUI 3 shell is the primary
-Windows desktop candidate and uses a real Python bridge for supported actions:
-create/load a project, scan mods, build a dry-run plan, enable/disable mods,
-reorder priority, run read-only doctor/tool checks, and apply the winning plan
-to a managed staging directory.
+Working today:
 
-WinUI game-folder apply is intentionally locked for now. Game apply and restore
-exist in the Python CLI/core, but the public desktop baseline is staging-first
-until the GUI workflow is further hardened.
+- Add loose `.pak`, `.ucas`, and `.utoc` files.
+- Add `.zip`, `.rar`, and `.7z` archives by extracting them into the selected
+  game's ModForge mods folder.
+- Add already-extracted mod folders by drag and drop.
+- Enable, disable, reorder, and search mods.
+- Store enabled state and priority in `modforge-state.json`.
+- Keep separate mod libraries per game profile.
+- Apply enabled Unreal package mods to `<Project>\Content\Paks\~mods`.
+- Apply simple UE4SS/runtime DLL layouts to `<Project>\Binaries\Win64`.
+- Undo the latest ModForge apply with hash-checked manifests.
+- Launch Steam games through `steam://rungameid/<appid>` when the Steam
+  manifest can be detected.
 
-The WinUI shell and CLI can now run a read-only localization inventory against
-the staged output. This detects JSON/CSV/TXT files that can be exported today,
-Unreal `.locres/.locmeta` resources that need a future extractor, staged
-`.pak/.ucas/.utoc` archives whose internals are not inspected yet, and binary
-Unreal assets that are explicitly not edited.
+Not working yet:
 
-Python is not bundled, no installer is shipped, and the project does not provide
-Nexus Mods downloads, encrypted PAK handling, DRM or anti-tamper bypass, asset
-editing, archive repacking, or virtual filesystem behavior.
+- Nexus downloads.
+- Installer packaging.
+- Advanced conflict review UI.
+- PAK repacking or encrypted PAK editing.
+- Full translation editor.
+- Virtual file system, hardlink, or symlink deployment.
 
-License note: this repository currently remains "All rights reserved" unless the
-owner explicitly changes the license. Public visibility does not by itself make
-the project open source.
+## Default Paths
 
-## Current Scope
+Game profiles are saved here:
 
-- Create and load a modding project file.
-- Choose a built-in game profile template.
-- Scan loose mod folders and ZIP mod packages.
-- Extract PCK/PAK packages through configured external tools before scanning
-  and deployment planning.
-- Detect destination conflicts between enabled mods.
-- Generate a dry-run deployment plan.
-- Render a Markdown report.
-- Check configured external tool paths from the CLI or GUI without failing the
-  workflow.
-- Create multiple user mod sets, switch between them, enable/disable mods, and
-  set priority order per set.
-- Copy winning files into a staging directory with an install manifest.
-- Apply to the game root with backups, then restore all files or selected
-  manifest paths.
-- Extract basic JSON/CSV/TXT strings into a translation CSV.
-- Inspect staged output for translation and Unreal localization candidates
-  without touching the game folder.
-- Run a read-only Unreal intake report before real mod testing to preview
-  Stellar Blade/CNS style mappings, sidecar groups, runtime-file risk, LogicMods
-  candidates, and unmanaged files.
-- Provide a lightweight desktop GUI for creating/opening projects, scanning mods,
-  toggling enabled state, changing priority, planning, reporting, applying, and
-  restoring.
-- Configure and check external tool paths from the GUI.
-- Sort GUI mod tables, inspect scan warnings, and see progress/status updates
-  during longer operations.
-- Inspect manifests from the CLI, preview restores, and audit/export/import
-  project metadata without copying real game or mod payloads.
-- Run Windows smoke scripts for release-candidate checks.
-
-## Public Preview Scope
-
-The public desktop preview is staging-first:
-
-1. Create or load a managed project.
-2. Scan mods.
-3. Generate a dry-run deployment plan.
-4. Review conflicts and warnings.
-5. Apply the winning plan to the project staging directory.
-
-Staging apply writes only to the configured project staging directory. It does
-not write to the game installation folder. Use the Python CLI for game
-apply/restore workflows while the WinUI game-write path remains locked.
-
-The WinUI bridge may run read-only `doctor --json` and `tools check --json`
-through `PythonCoreService`. It must not wire `apply-game` or `restore` in the
-WinUI bridge.
-
-## Unreal-First Target
-
-The active product target is an Unreal-first Workbench v0:
-
-- Generic Unreal `~mods` archive staging for `.pak`, `.ucas`, and `.utoc`.
-- Stellar Blade / CNS as an experimental profile for real-world Unreal path
-  complexity, including `SB/**`, `~mods`, JSON sidecars, and UE4SS/runtime
-  review gates.
-- Read-only localization inventory after staging, with clear labels for
-  extractable text, Unreal localization resources, staged archives, and binary
-  assets.
-
-REFramework/nativePC and Godot/Slay the Spire 2 fixture coverage remains in the
-test suite, but those families are no longer the first product surface for new
-workflow design. This preview still does not mean Nexus downloads, encrypted PAK
-support, archive repacking, arbitrary asset editing, a virtual filesystem, or
-installer generation.
-
-Current freeze docs:
-
-- [MVP status](docs/mvp-status.md)
-- [Support matrix](docs/support-matrix.md)
-- [Release checklist](docs/release-checklist.md)
-- [Apply workflow certification](docs/apply-workflow-certification.md)
-- [Changelog](CHANGELOG.md)
-- [Architecture V2](docs/architecture-v2.md)
-- [Windows shell plan](docs/windows-shell-plan.md)
-- [Onboarding UX](docs/onboarding-ux.md)
-
-## Quick Start
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -e .
+```text
+%APPDATA%\ModForge Manager\games.json
 ```
 
-Run the installed entrypoints:
+Each game gets a default mods folder like this:
 
-```powershell
-modforge doctor
-modforge profiles
-modforge-gui
+```text
+%USERPROFILE%\Documents\ModForge Manager\Games\<Game Name>\Mods
 ```
 
-Run the CLI directly from the source tree without installing:
+Apply manifests and backups live next to that game's mods folder:
 
-```powershell
-$env:PYTHONPATH = "src"
-python -m modforge doctor
-python -m modforge --help
-python -m modforge profiles
+```text
+%USERPROFILE%\Documents\ModForge Manager\Games\<Game Name>\.modforge
 ```
 
-When no project file exists, `doctor` reports runtime checks plus a project-file
-warning. Add `--strict` when warnings should fail automation.
+## Build
 
-Create a demo project:
+Requirements:
 
-```powershell
-$env:PYTHONPATH = "src"
-python -m modforge project init --name Demo --game-root tests\fixtures\fake_game --mods-dir tests\fixtures\fake_mods
-python -m modforge project init --name STS2 --game-root C:\Games\STS2 --mods-dir C:\Games\STS2\mods --profile sts2-mods
-python -m modforge scan-mods
-python -m modforge plan
-python -m modforge plan --summary
-python -m modforge report --output .modforge\conflict-report.md
-python -m modforge profile disable betterui
-python -m modforge profile create boss-run --name "Boss Run" --copy-from default
-python -m modforge profile switch boss-run
-python -m modforge profile list
-python -m modforge tools check
-python -m modforge tools set unreal_pak "C:\Tools\UnrealPak.exe {archive} -Extract {output}"
-python -m modforge doctor
-python -m modforge apply-staging --yes
-python -m modforge apply-game --yes
-python -m modforge manifests list
-python -m modforge manifests latest
-python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --preview
-python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --yes
-python -m modforge restore --manifest .modforge\manifests\<manifest-id>.json --path config\settings.json --yes
-python -m modforge project audit
-python -m modforge project export --out .modforge\project-export.json
-python -m modforge translation extract --source tests\fixtures\fake_mods --output .modforge\strings.csv
-python -m modforge translation inventory --project-file modforge.project.json --target staging --json
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_real_unreal_intake.ps1 -Source C:\ModForge\SampleUnrealMod
-```
+- Windows
+- .NET 9 SDK
 
-The real-mod intake helper is read-only and writes its JSON report to
-`Documents\ModForge Manager\Reports` by default. If you pass `-Output`, choose a
-path outside the inspected mod folder or archive path. ModForge refuses to
-overwrite the source, write the report inside a folder source, or replace an
-existing report file.
-
-Run the guided safe workflow on a temporary synthetic Monster Hunter Wilds /
-REFramework fixture:
+Build the launcher:
 
 ```powershell
-$env:PYTHONPATH = "src"
-$demo = Join-Path $env:TEMP ("modforge-safe-demo-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-$game = Join-Path $demo "game"
-$mods = Join-Path $demo "mods"
-$project = Join-Path $demo "modforge.project.json"
-$report = Join-Path $demo "conflict-report.md"
-
-New-Item -ItemType Directory -Path $demo | Out-Null
-Copy-Item -Recurse tests\fixtures\mhw_reframework_game $game
-Copy-Item -Recurse tests\fixtures\mhw_reframework_mods $mods
-
-python -m modforge doctor --project-file $project
-python -m modforge project init --name "Wilds Demo" --game-root $game --mods-dir $mods --profile mhw-reframework --project-file $project
-python -m modforge scan-mods --project-file $project
-python -m modforge plan --project-file $project --summary
-python -m modforge report --project-file $project --output $report
-
-python -m modforge apply-staging --project-file $project
-python -m modforge apply-staging --project-file $project --yes
-python -m modforge apply-game --project-file $project
-python -m modforge apply-game --project-file $project --yes
-
-$manifest = Get-ChildItem (Join-Path $demo ".modforge\manifests") -Filter *.json |
-  Sort-Object LastWriteTime -Descending |
-  Select-Object -First 1
-
-python -m modforge restore --manifest $manifest.FullName --path nativePC/wp/swo/swo001/mod/swo001.mod3 --preview
-python -m modforge restore --manifest $manifest.FullName --path nativePC/wp/swo/swo001/mod/swo001.mod3 --yes
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_launcher.ps1
 ```
 
-Run the lightweight GUI:
+Output:
+
+```text
+dist\ModForge.Launcher\ModForge.Launcher.exe
+```
+
+## Smoke Test
 
 ```powershell
-.\run_gui.bat
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_launcher.ps1
 ```
 
-For a non-interactive runtime check:
+The smoke test builds the launcher, runs the built-in self-test, and scans a
+temporary ModForge mods folder without touching real game files.
+
+## CLI Checks
+
+Scan a mods folder:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\run_gui.ps1 -Check
+dist\ModForge.Launcher\ModForge.Launcher.exe --smoke --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
-The GUI intentionally uses the Python standard library `tkinter` for the first
-usable version, so it can run in a fresh Python environment. On Windows the app
-primes Tcl before creating the first Tk window, which avoids broken `init.tcl`
-lookups in embedded or locally repaired Python installs.
-
-Run the experimental Windows-first WPF shell:
+Apply enabled mods:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build_windows_shell.ps1
-.\dist\ModForge.App\ModForge.App.exe
+dist\ModForge.Launcher\ModForge.Launcher.exe --apply --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
-This shell is the Windows-first product-direction spike. It launches without
-Python, shows guided onboarding and sample state data, and intentionally defers
-real scan/plan/apply work until the sidecar bridge is wired in a later
-milestone.
-
-Run the WinUI 3 primary Windows shell candidate after installing .NET SDK 9:
+Undo the latest apply:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build_winui_shell.ps1
-.\dist\ModForge.WinUI\ModForge.WinUI.exe
+dist\ModForge.Launcher\ModForge.Launcher.exe --undo --mods "%USERPROFILE%\Documents\ModForge Manager\Games\Palworld\Mods" --game "C:\Program Files (x86)\Steam\steamapps\common\Palworld"
 ```
 
-See `docs\windows-shell-decision.md` and `docs\winui3-comparison.md` for the
-WinUI 3 decision and WPF fallback policy.
+## Safety Model
 
-WinUI 3 is designed to avoid startup work: no startup scan, no Python process,
-and no external tool probe until the user chooses an action. It can call the
-Python core for the staging-first workflow listed above. Game apply remains
-locked in the WinUI public preview so staging output can be inspected first.
-The only WinUI diagnostics bridge additions are read-only `doctor --json` and
-`tools check --json`; `apply-game` and `restore` stay CLI-only here.
+`Apply Changes` first restores the previous ModForge apply when one exists,
+then writes the currently enabled mods. Files are restored or deleted only when
+they still match the previous ModForge manifest. If a game file was changed by
+something else, ModForge refuses to overwrite that uncertainty silently.
 
-Run the optional PySide6 GUI after installing the GUI extra:
+## Repository Shape
 
-```powershell
-pip install -e ".[gui]"
-modforge-gui-qt --check-dependency
-modforge-gui-qt modforge.project.json
+The active app is intentionally small:
+
+```text
+desktop/ModForge.Launcher/
+scripts/build_launcher.ps1
+scripts/smoke_launcher.ps1
 ```
 
-Built-in profile ids:
-
-Certified core profiles:
-
-- `reframework`
-- `mhw-reframework`
-- `unreal-pak`
-- `godot-pck`
-- `sts2-mods`
-
-Additional templates:
-
-- `generic-folder`
-- `mo2-mod`
-- `unity-bepinex`
-- `unity-melonloader`
-- `bethesda-data`
-- `cyberpunk-2077`
-
-Run tests with stdlib only:
-
-```powershell
-python -m unittest discover -s tests
-python -m modforge doctor --project-file modforge.project.json
-.\scripts\release_smoke.ps1
-.\scripts\release_smoke.ps1 -IncludeDesktop
-.\scripts\public_staging_smoke.ps1
-```
-
-Optional dev tooling after installing extras:
-
-```powershell
-.\scripts\dev_setup.ps1
-pytest
-python -m ruff check .
-python -m ruff format --check .
-.\scripts\lint.ps1
-```
-
-## Safety Defaults
-
-- Dry-run by default.
-- Staging apply writes only to the configured staging directory.
-- The WinUI public preview keeps game-folder apply locked; inspect staging
-  output first.
-- WinUI may run read-only `doctor --json` and `tools check --json` through the
-  Python bridge, but must not wire `apply-game` or `restore`.
-- Game apply requires `--yes`, backs up overwritten files, and writes a manifest
-  under `.modforge\manifests`.
-- Restore requires `--yes` and a manifest path. Add one or more `--path`
-  options to restore selected destination paths only.
-- Restore preview works without `--yes`, reports blocked actions, and does not
-  write files or update the manifest.
-- ZIP entries with unsafe paths are ignored and reported as warnings.
-- PCK/PAK extraction writes only under `.modforge\extracted` and the extracted
-  files still pass through the same safe staging/game destination checks.
-- Do not commit real game files, mod archives, crash dumps, DLLs, or executables.
-- Use synthetic fixtures only.
-- Unsupported containers fail with clear warnings.
+Older Python, WPF, and WinUI experiments have been removed from the active
+product path.

@@ -1,40 +1,11 @@
-# Security Policy
+# Security
 
-## Supported Versions
+ModForge writes to a game folder only during explicit apply.
 
-Security and safety reports are currently reviewed for the latest `main` branch
-and the latest MVP release-candidate state only.
+Safety rules:
 
-## Reporting Safety Issues
-
-Please report safety problems with synthetic reproduction steps whenever
-possible. Good reports include:
-
-- The command or GUI workflow used.
-- Expected versus actual staging destination.
-- A fake fixture tree that reproduces the issue.
-- Redacted command output.
-
-Do not attach or upload:
-
-- Real game files.
-- Real mod archives.
-- Generated staging outputs from real projects.
-- Crash dumps.
-- Logs containing private paths.
-- API keys, tokens, passwords, or account data.
-
-If a report needs paths, replace private paths with examples such as
-`C:\Path\To\Game`, `C:\Path\To\Mods`, or
-`%USERPROFILE%\Documents\ModForge Manager\Projects\<game>`.
-
-## Safety Boundaries
-
-ModForge is dry-run-first and staging-first. Scan and plan operations should not
-modify files. Apply-to-staging writes only inside the configured project staging
-directory. Game-folder writes require a separate explicit action and are not
-enabled in the WinUI public preview.
-
-Do not request help bypassing encryption, DRM, anti-tamper systems, account
-gates, or protected game assets.
-
+- Build a virtual plan before copying files.
+- Restore or delete files from the latest ModForge manifest before reapply.
+- Back up existing game files before overwriting them.
+- Reject paths that escape the selected game folder.
+- Keep unknown archive editing, encrypted PAK handling, and download automation out of scope.
