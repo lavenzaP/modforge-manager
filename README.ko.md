@@ -82,6 +82,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_launcher.ps1
 이 테스트는 런처를 빌드하고, 내장 self-test를 실행하고, 임시 ModForge 모드
 폴더를 스캔합니다. 실제 게임 파일은 건드리지 않습니다.
 
+## 에이전트 작업 흐름
+
+범위 지정, 초보 유저 관점 리뷰, 안전 리뷰, 릴리스 확인은
+[docs/agent-pipeline.md](docs/agent-pipeline.md)를 사용하세요.
+
 ## CLI 확인
 
 모드 폴더 스캔:

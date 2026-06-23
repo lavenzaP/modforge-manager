@@ -84,6 +84,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_launcher.ps1
 The smoke test builds the launcher, runs the built-in self-test, and scans a
 temporary ModForge mods folder without touching real game files.
 
+## Agent Workflow
+
+Use [docs/agent-pipeline.md](docs/agent-pipeline.md) for scoped agent work,
+beginner-user review, safety review, and release checks.
+
 ## CLI Checks
 
 Scan a mods folder:
