@@ -119,6 +119,8 @@ internal static class Program
             var plan = VirtualPlanner.Build(scanned.Where(mod => mod.Enabled), game);
             if (scanned[0].Name != "A" || scanned[1].Name != "B") return 4;
             if (plan.Conflicts.Count != 1 || plan.Winners.Count != 1 || plan.Winners[0].ModName != "B") return 5;
+            var conflict = plan.Conflicts[0];
+            if (conflict.Winner != "B" || conflict.Losers.Single() != "A" || conflict.Candidates.Count != 2) return 19;
 
             var target = Path.Combine(game, "SB", "Content", "Paks", "~mods", "same.json");
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -383,7 +385,7 @@ internal sealed class MainForm : Form
         StyleButton(button, 70, Color.White, Color.FromArgb(31, 41, 55));
         var menu = new ContextMenuStrip();
         menu.Items.Add("Preview Changes", null, (_, _) => PreviewChanges());
-        menu.Items.Add("Show Issues", null, (_, _) => ShowIssues());
+        menu.Items.Add("Review Conflicts", null, (_, _) => ShowIssues());
         menu.Items.Add("Translation Inventory", null, (_, _) => ShowTranslationInventory());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Restore Last Apply", null, (_, _) => RestoreLastApply());
@@ -499,8 +501,8 @@ internal sealed class MainForm : Form
         _apply.Enabled = _plan.Winners.Count > 0 || hasActiveApply;
         foreach (var mod in _mods)
         {
-            mod.Status = _plan.Conflicts.Any(conflict => conflict.Mods.Contains(mod.Name))
-                ? "Move preferred mod lower"
+            mod.Status = _plan.Conflicts.Any(conflict => conflict.Candidates.Any(candidate => candidate.ModName.Equals(mod.Name, StringComparison.OrdinalIgnoreCase)))
+                ? "Conflict: lower mod wins"
                 : mod.FileCount == 0 ? "No files" : "OK";
         }
         _rows.ResetBindings(false);
@@ -509,7 +511,7 @@ internal sealed class MainForm : Form
             ? $"{_mods.Count(mod => mod.Enabled)} mods on - Apply Changes syncs on/off state to the game folder."
             : _plan.Conflicts.Count == 0
             ? $"{_mods.Count(mod => mod.Enabled)} mods on - {_plan.Winners.Count} files ready - game changes are protected."
-            : $"{_plan.Conflicts.Count} issue(s): two mods edit the same file. Move the mod you want lower.";
+            : $"{_plan.Conflicts.Count} conflict(s): two mods change the same game file. Move the mod you want to win lower.";
     }
 
     private void RefreshGrid()
@@ -636,9 +638,17 @@ internal sealed class MainForm : Form
             MessageBox.Show(this, "No issues in the current plan.", "Issues");
             return;
         }
-        var conflicts = _plan.Conflicts.Select(item => $"{item.FileName}\nWinner: {item.Winner}\nMods: {string.Join(", ", item.Mods)}");
-        var skipped = _plan.Skipped.Take(20).Select(item => $"Skipped: {item.ModName} - {item.SourceRelative}");
-        MessageBox.Show(this, string.Join("\n\n", conflicts.Concat(skipped)), "Issues");
+        var conflicts = _plan.Conflicts.Select(ConflictText);
+        var skipped = _plan.Skipped.Take(20).Select(item => $"Skipped file\nMod: {item.ModName}\nFile: {item.SourceRelative}\nReason: ModForge does not know where this file should go yet.");
+        MessageBox.Show(this, string.Join("\n\n", conflicts.Concat(skipped)), "Conflict Review");
+    }
+
+    private static string ConflictText(ConflictInfo conflict)
+    {
+        var candidates = conflict.Candidates
+            .OrderBy(candidate => candidate.Priority)
+            .Select(candidate => $"{candidate.Priority}. {candidate.ModName}{(candidate.ModName.Equals(conflict.Winner, StringComparison.OrdinalIgnoreCase) ? " (will be copied)" : " (will be ignored)")}\n   File: {candidate.SourceRelative}");
+        return $"Two mods change the same file.\nOnly one mod can be copied to the game. The lower mod in your list wins.\n\nGame file:\n{conflict.DestinationRelative}\n\nWill be copied:\n{conflict.Winner}\n\nWill be ignored:\n{string.Join(", ", conflict.Losers)}\n\nHow to change this:\nMove the mod you want to win lower in the mod list.\n\nFiles in this conflict:\n{string.Join("\n", candidates)}";
     }
 
     private void ShowTranslationInventory()
@@ -1243,7 +1253,8 @@ internal sealed class ModStateEntry
 
 internal sealed record PlanEntry(string ModName, int Priority, string SourcePath, string SourceRelative, string DestinationRelative);
 internal sealed record PlanSkipped(string ModName, string SourceRelative);
-internal sealed record ConflictInfo(string FileName, string Winner, List<string> Mods);
+internal sealed record ConflictCandidate(string ModName, int Priority, string SourceRelative);
+internal sealed record ConflictInfo(string DestinationRelative, string Winner, List<string> Losers, List<ConflictCandidate> Candidates);
 internal sealed record VirtualPlan(List<PlanEntry> Entries, List<PlanEntry> Winners, List<ConflictInfo> Conflicts, List<PlanSkipped> Skipped)
 {
     public static VirtualPlan Empty { get; } = new([], [], [], []);
@@ -1284,7 +1295,12 @@ internal static class VirtualPlanner
             .Select(group =>
             {
                 var ordered = group.OrderBy(entry => entry.Priority).ToList();
-                return new ConflictInfo(group.Key, ordered.Last().ModName, ordered.Select(entry => entry.ModName).Distinct(StringComparer.OrdinalIgnoreCase).ToList());
+                var winner = ordered.Last().ModName;
+                return new ConflictInfo(
+                    group.Key,
+                    winner,
+                    ordered.Select(entry => entry.ModName).Distinct(StringComparer.OrdinalIgnoreCase).Where(name => !name.Equals(winner, StringComparison.OrdinalIgnoreCase)).ToList(),
+                    ordered.Select(entry => new ConflictCandidate(entry.ModName, entry.Priority, entry.SourceRelative)).ToList());
             })
             .ToList();
         return new VirtualPlan(entries, winners, conflicts, skipped);

@@ -2,8 +2,6 @@
 
 ## Next
 
-- Add a clearer conflict screen that shows the exact destination file, winner,
-  loser, and the order change needed to switch the winner.
 - Add per-game path rules for common Unreal layouts that do not use only
   `Content\Paks\~mods` and `Binaries\Win64`.
 - Show skipped files in the main UI, not only in preview/issues popups.
