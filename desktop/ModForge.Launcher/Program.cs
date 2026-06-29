@@ -57,6 +57,13 @@ internal static class Program
             return 0;
         }
 
+        if (args.Contains("--verify", StringComparer.OrdinalIgnoreCase))
+        {
+            var result = GameApplier.VerifyLatest(gamePath, modsPath);
+            WriteOutput(args, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
         return 0;
@@ -129,6 +136,8 @@ internal static class Program
             var applied = GameApplier.Apply(scanned, game, mods);
             if (applied.CopiedFiles != 1 || applied.OverwrittenFiles != 1) return 6;
             if (File.ReadAllText(target) != "b") return 7;
+            var verified = GameApplier.VerifyLatest(game, mods);
+            if (verified.TotalFiles != 1 || verified.OkFiles != 1 || verified.ChangedFiles != 0 || verified.MissingFiles != 0) return 21;
 
             var undone = GameApplier.UndoLatest(game, mods);
             if (undone.RestoredFiles != 1 || File.ReadAllText(target) != "vanilla") return 8;
@@ -142,6 +151,8 @@ internal static class Program
             File.WriteAllText(Path.Combine(genericMod, "generic.pak"), "pak");
             var genericPlan = VirtualPlanner.Build([new ModRow { Name = "GenericPak", Enabled = true, Priority = 1, Path = genericMod }], genericGame);
             if (MainForm.FindUnrealProjectFolder(genericGame) != "GenericGame" || genericPlan.Winners.Single().DestinationRelative != "GenericGame/Content/Paks/~mods/generic.pak") return 13;
+            var customPlan = VirtualPlanner.Build([new ModRow { Name = "GenericPak", Enabled = true, Priority = 1, Path = genericMod }], genericGame, "GenericGame/Content/Paks/LogicMods");
+            if (customPlan.Winners.Single().DestinationRelative != "GenericGame/Content/Paks/LogicMods/generic.pak") return 20;
 
             var steamApps = Path.Combine(root, "Steam", "steamapps");
             var steamGame = Path.Combine(steamApps, "common", "Palworld");
@@ -172,12 +183,17 @@ internal static class Program
 
             GameApplier.Apply(scanned, game, mods);
             File.WriteAllText(target, "user-change");
+            var changed = GameApplier.VerifyLatest(game, mods);
+            if (changed.ChangedFiles != 1) return 22;
             var skippedUndo = GameApplier.UndoLatest(game, mods);
             if (skippedUndo.SkippedFiles != 1 || File.ReadAllText(target) != "user-change") return 9;
 
             var batch = new[] { new ModRow { Enabled = true }, new ModRow { Enabled = false } };
             MainForm.ApplyBatchEnabled(batch, enabled: true);
             if (batch.Any(mod => !mod.Enabled)) return 10;
+            var firstProfile = new GameProfile { Name = "Stellar Blade", GamePath = "C:\\Games\\StellarBlade" };
+            var secondProfile = new GameProfile { Name = "Palworld", GamePath = "C:\\Games\\Palworld" };
+            if (MainForm.SelectedProfileIndex([firstProfile, secondProfile], secondProfile) != 1) return 23;
             return 0;
         }
         finally
@@ -261,9 +277,9 @@ internal sealed class MainForm : Form
             Margin = new Padding(0, 0, 10, 0),
         }, 0, 0);
         header.Controls.Add(new Label { Text = "ModForge Manager", AutoSize = true, Font = new Font(Font.FontFamily, 14F, FontStyle.Bold), Padding = new Padding(0, 5, 22, 0) }, 1, 0);
-        _games.DataSource = _profiles;
+        _gamePicker.DisplayMember = nameof(GameProfile.Name);
+        RefreshGamePicker();
         _gamePicker.DataSource = _games;
-        _gamePicker.SelectedItem = _profile;
         _gamePicker.Margin = new Padding(0, 0, 8, 0);
         header.Controls.Add(_gamePicker, 2, 0);
         header.Controls.Add(Button("Change Game", ChangeGame, 112), 3, 0);
@@ -385,12 +401,15 @@ internal sealed class MainForm : Form
         StyleButton(button, 70, Color.White, Color.FromArgb(31, 41, 55));
         var menu = new ContextMenuStrip();
         menu.Items.Add("Preview Changes", null, (_, _) => PreviewChanges());
-        menu.Items.Add("Review Conflicts", null, (_, _) => ShowIssues());
+        menu.Items.Add("Review Conflicts / Skipped", null, (_, _) => ShowIssues());
+        menu.Items.Add("Check Applied Mods", null, (_, _) => VerifyAppliedFiles());
         menu.Items.Add("Translation Inventory", null, (_, _) => ShowTranslationInventory());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Restore Last Apply", null, (_, _) => RestoreLastApply());
         menu.Items.Add("Change Game", null, (_, _) => ChangeGame());
         menu.Items.Add("Change Mods Folder", null, (_, _) => ChangeModsFolder());
+        menu.Items.Add("Change PAK Install Folder", null, (_, _) => ChangePakFolder());
+        menu.Items.Add("Reset PAK Install Folder", null, (_, _) => ResetPakFolder());
         menu.Items.Add("Game Folder", null, (_, _) => OpenFolder(_gamePath));
         menu.Items.Add("Mods Folder", null, (_, _) => OpenFolder(_modsPath));
         menu.Items.Add("Backups", null, (_, _) => OpenFolder(Path.Combine(GameApplier.WorkspaceRoot(_modsPath), "backups")));
@@ -477,7 +496,7 @@ internal sealed class MainForm : Form
         {
             e.CellStyle.ForeColor = row.Status.Contains("OK", StringComparison.OrdinalIgnoreCase)
                 ? Color.FromArgb(22, 101, 52)
-                : row.Status.Contains("No files", StringComparison.OrdinalIgnoreCase)
+                : row.Status.Contains("No files", StringComparison.OrdinalIgnoreCase) || row.Status.Contains("Skipped", StringComparison.OrdinalIgnoreCase)
                     ? Color.FromArgb(180, 83, 9)
                     : Color.FromArgb(185, 28, 28);
             e.CellStyle.Font = new Font(Font.FontFamily, 9F, FontStyle.Bold);
@@ -496,21 +515,27 @@ internal sealed class MainForm : Form
 
     private void RefreshPlan()
     {
-        _plan = VirtualPlanner.Build(_mods.Where(mod => mod.Enabled), _gamePath);
+        _plan = VirtualPlanner.Build(_mods.Where(mod => mod.Enabled), _gamePath, _profile.UnrealPakRoot);
         var hasActiveApply = GameApplier.HasActiveApply(_gamePath, _modsPath);
         _apply.Enabled = _plan.Winners.Count > 0 || hasActiveApply;
+        var skippedByMod = _plan.Skipped
+            .GroupBy(item => item.ModName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
         foreach (var mod in _mods)
         {
             mod.Status = _plan.Conflicts.Any(conflict => conflict.Candidates.Any(candidate => candidate.ModName.Equals(mod.Name, StringComparison.OrdinalIgnoreCase)))
                 ? "Conflict: lower mod wins"
+                : skippedByMod.TryGetValue(mod.Name, out var skipped)
+                    ? $"Skipped: {skipped} file(s)"
                 : mod.FileCount == 0 ? "No files" : "OK";
         }
         _rows.ResetBindings(false);
         _grid.Invalidate();
+        var skippedText = _plan.Skipped.Count == 0 ? "" : $" - {_plan.Skipped.Count} skipped";
         _summary.Text = hasActiveApply
-            ? $"{_mods.Count(mod => mod.Enabled)} mods on - Apply Changes syncs on/off state to the game folder."
+            ? $"{_mods.Count(mod => mod.Enabled)} mods on - Apply Changes syncs on/off state to the game folder{skippedText}."
             : _plan.Conflicts.Count == 0
-            ? $"{_mods.Count(mod => mod.Enabled)} mods on - {_plan.Winners.Count} files ready - game changes are protected."
+            ? $"{_mods.Count(mod => mod.Enabled)} mods on - {_plan.Winners.Count} files ready{skippedText} - game changes are protected."
             : $"{_plan.Conflicts.Count} conflict(s): two mods change the same game file. Move the mod you want to win lower.";
     }
 
@@ -600,10 +625,11 @@ internal sealed class MainForm : Form
     {
         try
         {
-            var result = GameApplier.ApplyCurrentSelection(_mods.Where(mod => mod.Enabled).ToList(), _gamePath, _modsPath);
+            var result = GameApplier.ApplyCurrentSelection(_mods.Where(mod => mod.Enabled).ToList(), _gamePath, _modsPath, _profile.UnrealPakRoot);
+            var verify = GameApplier.VerifyLatest(_gamePath, _modsPath);
             SetStatus($"Synced game folder - copied {result.CopiedFiles}, restored {result.RestoredFiles}, deleted {result.DeletedFiles}");
             RefreshPlan();
-            MessageBox.Show(this, $"Game folder updated.\nCopied: {result.CopiedFiles}\nRestored: {result.RestoredFiles}\nDeleted: {result.DeletedFiles}", "Apply Changes", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, $"Game folder updated.\nCopied: {result.CopiedFiles}\nRestored: {result.RestoredFiles}\nDeleted: {result.DeletedFiles}\nVerified: {verify.OkFiles}/{verify.TotalFiles}", "Apply Changes", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
@@ -614,15 +640,57 @@ internal sealed class MainForm : Form
 
     private void RestoreLastApply()
     {
-        var answer = MessageBox.Show(this, "Restore the game folder to the state before the latest ModForge apply?", "Restore Last Apply", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-        if (answer != DialogResult.Yes) return;
-        var result = GameApplier.UndoLatest(_gamePath, _modsPath);
-        SetStatus($"Restore complete - restored {result.RestoredFiles}, deleted {result.DeletedFiles}, skipped {result.SkippedFiles}");
-        RefreshPlan();
-        if (result.SkippedFiles > 0)
+        var verify = GameApplier.VerifyLatest(_gamePath, _modsPath);
+        if (!string.IsNullOrWhiteSpace(verify.Error))
         {
-            MessageBox.Show(this, "Restore skipped changed files. ModForge only restores files that still match the last apply manifest.", "Restore skipped", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, verify.Error, "Restore Last Apply", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
         }
+        if (!verify.HasManifest)
+        {
+            MessageBox.Show(this, "No ModForge apply to restore for this game.", "Restore Last Apply", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (verify.ProblemFiles.Count > 0)
+        {
+            MessageBox.Show(this, $"Restore is blocked because {verify.ProblemFiles.Count} applied file(s) changed or are missing.\n\n{string.Join("\n", verify.ProblemFiles.Take(10))}", "Restore Last Apply", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var answer = MessageBox.Show(this, $"Remove the last ModForge apply from this game?\n\nFiles copied by ModForge: {verify.TotalFiles}\nOnly files copied by ModForge last time will be touched.", "Restore Last Apply", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (answer != DialogResult.Yes) return;
+        try
+        {
+            var result = GameApplier.UndoLatest(_gamePath, _modsPath);
+            SetStatus($"Restore complete - restored {result.RestoredFiles}, deleted {result.DeletedFiles}, skipped {result.SkippedFiles}");
+            RefreshPlan();
+            MessageBox.Show(this, $"Restore complete.\nRestored: {result.RestoredFiles}\nRemoved: {result.DeletedFiles}\nSkipped: {result.SkippedFiles}", "Restore Last Apply", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "Restore failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void VerifyAppliedFiles()
+    {
+        var result = GameApplier.VerifyLatest(_gamePath, _modsPath);
+        if (!string.IsNullOrWhiteSpace(result.Error))
+        {
+            MessageBox.Show(this, result.Error, "Check Applied Mods", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+        if (!result.HasManifest)
+        {
+            MessageBox.Show(this, "No ModForge apply has been made for this game yet.", "Check Applied Mods", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var details = result.ProblemFiles.Count == 0
+            ? "All ModForge-applied files are still in place."
+            : $"Some applied files changed or are missing.\n\n{string.Join("\n", result.ProblemFiles.Take(10))}";
+        SetStatus($"Checked applied mods - OK {result.OkFiles}, changed {result.ChangedFiles}, missing {result.MissingFiles}");
+        MessageBox.Show(this, $"{details}\n\nOK: {result.OkFiles}\nChanged: {result.ChangedFiles}\nMissing: {result.MissingFiles}", "Check Applied Mods", MessageBoxButtons.OK, result.ProblemFiles.Count == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     private void PreviewChanges()
@@ -640,7 +708,7 @@ internal sealed class MainForm : Form
         }
         var conflicts = _plan.Conflicts.Select(ConflictText);
         var skipped = _plan.Skipped.Take(20).Select(item => $"Skipped file\nMod: {item.ModName}\nFile: {item.SourceRelative}\nReason: ModForge does not know where this file should go yet.");
-        MessageBox.Show(this, string.Join("\n\n", conflicts.Concat(skipped)), "Conflict Review");
+        MessageBox.Show(this, string.Join("\n\n", conflicts.Concat(skipped)), "Review Conflicts / Skipped");
     }
 
     private static string ConflictText(ConflictInfo conflict)
@@ -717,6 +785,30 @@ internal sealed class MainForm : Form
         ScanMods();
     }
 
+    private void ChangePakFolder()
+    {
+        var current = string.IsNullOrWhiteSpace(_profile.UnrealPakRoot) ? VirtualPlanner.DefaultPakRoot(_gamePath) : _profile.UnrealPakRoot;
+        using var dialog = new FolderBrowserDialog { Description = "Choose where PAK/UCAS/UTOC mods should be copied", SelectedPath = Path.Combine(_gamePath, current.Replace('/', Path.DirectorySeparatorChar)) };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (!TryRelativeInside(_gamePath, dialog.SelectedPath, out var relative))
+        {
+            MessageBox.Show(this, "Choose a folder inside the selected game folder.", "Change PAK Install Folder", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        _profile.UnrealPakRoot = relative.Replace('\\', '/');
+        GameProfileStore.Save(_profiles, _profile);
+        RefreshPlan();
+        SetStatus($"PAK/UCAS/UTOC mods will install to {_profile.UnrealPakRoot}");
+    }
+
+    private void ResetPakFolder()
+    {
+        _profile.UnrealPakRoot = "";
+        GameProfileStore.Save(_profiles, _profile);
+        RefreshPlan();
+        SetStatus("PAK/UCAS/UTOC mods will use the detected Unreal folder");
+    }
+
     private void SwitchProfile(GameProfile profile)
     {
         SaveModState();
@@ -733,8 +825,22 @@ internal sealed class MainForm : Form
         _switchingGame = true;
         _games.DataSource = null;
         _games.DataSource = _profiles;
-        _gamePicker.SelectedItem = _profile;
+        var index = SelectedProfileIndex(_profiles, _profile);
+        if (index >= 0) _games.Position = index;
         _switchingGame = false;
+    }
+
+    internal static int SelectedProfileIndex(IReadOnlyList<GameProfile> profiles, GameProfile selected)
+    {
+        for (var i = 0; i < profiles.Count; i++)
+        {
+            if (ReferenceEquals(profiles[i], selected)) return i;
+        }
+        for (var i = 0; i < profiles.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(profiles[i].GamePath) && !string.IsNullOrWhiteSpace(selected.GamePath) && SamePath(profiles[i].GamePath, selected.GamePath)) return i;
+        }
+        return profiles.Count > 0 ? 0 : -1;
     }
 
     private void SaveModState()
@@ -1005,6 +1111,11 @@ internal sealed class MainForm : Form
     private static string Short(string path) => Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     private static string FriendlyGameName(string path) => Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     private static bool SamePath(string left, string right) => Path.GetFullPath(left).TrimEnd('\\').Equals(Path.GetFullPath(right).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+    private static bool TryRelativeInside(string root, string path, out string relative)
+    {
+        relative = Path.GetRelativePath(root, path);
+        return relative != "." && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar) && !Path.IsPathRooted(relative);
+    }
     private void SetStatus(string value) => _status.Text = value;
 }
 
@@ -1025,6 +1136,7 @@ internal sealed class GameProfile
     public string Name { get; set; } = "";
     public string GamePath { get; set; } = "";
     public string ModsPath { get; set; } = "";
+    public string UnrealPakRoot { get; set; } = "";
     public bool Selected { get; set; }
     public override string ToString() => Name;
 }
@@ -1268,17 +1380,18 @@ internal static class VirtualPlanner
         "dwmapi.dll", "ue4ss.dll", "version.dll", "winhttp.dll", "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll",
     };
 
-    public static VirtualPlan Build(IEnumerable<ModRow> mods, string gameRoot)
+    public static VirtualPlan Build(IEnumerable<ModRow> mods, string gameRoot, string unrealPakRoot = "")
     {
         var entries = new List<PlanEntry>();
         var skipped = new List<PlanSkipped>();
         var projectFolder = MainForm.FindUnrealProjectFolder(gameRoot) ?? "";
+        var packageRoot = PackageRoot(projectFolder, unrealPakRoot);
         foreach (var mod in mods.OrderBy(mod => mod.Priority))
         {
             foreach (var source in Files(mod.Path))
             {
                 var relative = File.Exists(mod.Path) ? Path.GetFileName(source) : Path.GetRelativePath(mod.Path, source).Replace('\\', '/');
-                var destination = MapDestination(relative, projectFolder);
+                var destination = MapDestination(relative, projectFolder, packageRoot);
                 if (destination is null)
                 {
                     skipped.Add(new PlanSkipped(mod.Name, relative));
@@ -1319,7 +1432,9 @@ internal static class VirtualPlanner
         }
     }
 
-    private static string? MapDestination(string relative, string projectFolder)
+    public static string DefaultPakRoot(string gameRoot) => UnrealPath(MainForm.FindUnrealProjectFolder(gameRoot) ?? "", "Content/Paks/~mods");
+
+    private static string? MapDestination(string relative, string projectFolder, string packageRoot)
     {
         var normalized = relative.Replace('\\', '/').TrimStart('/');
         var name = Path.GetFileName(normalized);
@@ -1329,11 +1444,22 @@ internal static class VirtualPlanner
         if (normalized.StartsWith("Content/Paks/", StringComparison.OrdinalIgnoreCase) || normalized.StartsWith("Binaries/Win64/", StringComparison.OrdinalIgnoreCase)) return UnrealPath(projectFolder, normalized);
         if (normalized.StartsWith("ue4ss/", StringComparison.OrdinalIgnoreCase)) return UnrealPath(projectFolder, $"Binaries/Win64/{normalized}");
         if (!normalized.Contains('/') && RuntimeDlls.Contains(name)) return UnrealPath(projectFolder, $"Binaries/Win64/{name}");
-        if (PackageExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase) || ext.Equals(".json", StringComparison.OrdinalIgnoreCase)) return UnrealPath(projectFolder, $"Content/Paks/~mods/{name}");
+        if (PackageExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase) || ext.Equals(".json", StringComparison.OrdinalIgnoreCase)) return $"{packageRoot}/{name}";
         return null;
     }
 
     private static string UnrealPath(string projectFolder, string relative) => string.IsNullOrWhiteSpace(projectFolder) ? relative : $"{projectFolder}/{relative}";
+
+    private static string PackageRoot(string projectFolder, string unrealPakRoot)
+    {
+        var fallback = UnrealPath(projectFolder, "Content/Paks/~mods");
+        if (string.IsNullOrWhiteSpace(unrealPakRoot)) return fallback;
+        var root = unrealPakRoot.Replace('\\', '/').Trim('/');
+        if (root.Contains(':') || root.Split('/').Any(part => string.IsNullOrWhiteSpace(part) || part == "." || part == "..")) return fallback;
+        return !string.IsNullOrWhiteSpace(projectFolder) && root.StartsWith("Content/", StringComparison.OrdinalIgnoreCase)
+            ? UnrealPath(projectFolder, root)
+            : root;
+    }
 
     private static bool Ignored(string name)
     {
@@ -1346,7 +1472,7 @@ internal static class VirtualPlanner
 
 internal static class GameApplier
 {
-    public static GameApplyResult ApplyCurrentSelection(IReadOnlyList<ModRow> mods, string gameRoot, string modsPath)
+    public static GameApplyResult ApplyCurrentSelection(IReadOnlyList<ModRow> mods, string gameRoot, string modsPath, string unrealPakRoot = "")
     {
         var restored = 0;
         var deleted = 0;
@@ -1363,11 +1489,11 @@ internal static class GameApplier
 
         if (mods.Count == 0) return new GameApplyResult(0, 0, 0, restored, deleted, "", "");
 
-        var result = Apply(mods, gameRoot, modsPath);
+        var result = Apply(mods, gameRoot, modsPath, unrealPakRoot);
         return result with { RestoredFiles = restored, DeletedFiles = deleted };
     }
 
-    public static GameApplyResult Apply(IReadOnlyList<ModRow> mods, string gameRoot, string modsPath)
+    public static GameApplyResult Apply(IReadOnlyList<ModRow> mods, string gameRoot, string modsPath, string unrealPakRoot = "")
     {
         if (!Directory.Exists(gameRoot)) throw new DirectoryNotFoundException($"Game folder not found: {gameRoot}");
         if (File.Exists(LatestManifestPath(modsPath)))
@@ -1375,7 +1501,7 @@ internal static class GameApplier
             throw new InvalidOperationException("A previous ModForge apply is still active. Use Apply Changes to sync the current mod list.");
         }
 
-        var plan = VirtualPlanner.Build(mods, gameRoot);
+        var plan = VirtualPlanner.Build(mods, gameRoot, unrealPakRoot);
         var applyId = DateTime.Now.ToString("yyyyMMdd-HHmmss-fffffff") + "-" + Guid.NewGuid().ToString("N")[..8];
         var backupRoot = Path.Combine(WorkspaceRoot(modsPath), "backups", applyId);
         var manifestPath = Path.Combine(WorkspaceRoot(modsPath), "manifests", $"{applyId}-game-apply.json");
@@ -1392,6 +1518,7 @@ internal static class GameApplier
             CreatedAt = DateTimeOffset.Now,
             GamePath = gameRoot,
             ModsPath = modsPath,
+            UnrealPakRoot = unrealPakRoot,
             BackupRoot = backupRoot,
             Files = written,
             Backups = backups,
@@ -1444,6 +1571,51 @@ internal static class GameApplier
         }
 
         return new GameApplyResult(copied, overwritten, plan.Skipped.Count, 0, 0, backupRoot, manifestPath);
+    }
+
+    public static ApplyVerification VerifyLatest(string gameRoot, string modsPath)
+    {
+        var manifestPath = LatestManifestPath(modsPath);
+        if (!File.Exists(manifestPath)) return new ApplyVerification(false, 0, 0, 0, 0, [], manifestPath, "");
+
+        GameApplyManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<GameApplyManifest>(File.ReadAllText(manifestPath));
+        }
+        catch (JsonException)
+        {
+            return new ApplyVerification(true, 0, 0, 0, 0, [], manifestPath, "The latest ModForge apply record is unreadable. Open the manifest or backups folder before applying or restoring.");
+        }
+        if (manifest is null) return new ApplyVerification(true, 0, 0, 0, 0, [], manifestPath, "The latest ModForge apply record is empty or unreadable.");
+        if (!SamePath(manifest.GamePath, gameRoot)) return new ApplyVerification(false, 0, 0, 0, 0, [], manifestPath, "");
+
+        var ok = 0;
+        var changed = 0;
+        var missing = 0;
+        var problems = new List<string>();
+        var files = manifest.Files
+            .GroupBy(file => file.DestinationRelative, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Last())
+            .ToList();
+        foreach (var file in files)
+        {
+            var destination = FullPathInside(gameRoot, file.DestinationRelative);
+            if (!File.Exists(destination))
+            {
+                missing++;
+                problems.Add($"Missing: {file.DestinationRelative}");
+                continue;
+            }
+            if (Matches(destination, file.WrittenSha256, file.WrittenLength, allowMissingWhenLegacy: false))
+            {
+                ok++;
+                continue;
+            }
+            changed++;
+            problems.Add($"Changed: {file.DestinationRelative}");
+        }
+        return new ApplyVerification(true, files.Count, ok, changed, missing, problems, manifestPath, "");
     }
 
     public static UndoResult UndoLatest(string gameRoot, string modsPath)
@@ -1576,6 +1748,7 @@ internal static class GameApplier
 
 internal sealed record GameApplyResult(int CopiedFiles, int OverwrittenFiles, int SkippedFiles, int RestoredFiles, int DeletedFiles, string BackupRoot, string ManifestPath);
 internal sealed record UndoResult(int RestoredFiles, int DeletedFiles, int SkippedFiles);
+internal sealed record ApplyVerification(bool HasManifest, int TotalFiles, int OkFiles, int ChangedFiles, int MissingFiles, List<string> ProblemFiles, string ManifestPath, string Error);
 
 internal sealed class GameApplyManifest
 {
@@ -1584,6 +1757,7 @@ internal sealed class GameApplyManifest
     public DateTimeOffset CreatedAt { get; set; }
     public string GamePath { get; set; } = "";
     public string ModsPath { get; set; } = "";
+    public string UnrealPakRoot { get; set; } = "";
     public string BackupRoot { get; set; } = "";
     public List<GameApplyFile> Files { get; set; } = [];
     public List<GameApplyBackup> Backups { get; set; } = [];

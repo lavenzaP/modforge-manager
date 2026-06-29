@@ -122,7 +122,7 @@ v0.x.x-preview.x
 Before a release:
 
 - Target only a `main` commit whose GitHub Actions `CI` passed.
-- Rebuild the portable zip; do not reuse an old `dist` asset.
+- Rebuild the portable zip with `scripts\package_launcher.ps1`; do not reuse an old `dist` asset.
 - Check tag conflicts before creating the release.
 - Verify the uploaded asset and report SHA256.
 

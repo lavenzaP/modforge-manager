@@ -1,15 +1,5 @@
 # TODO
 
-## Next
-
-- Add per-game path rules for common Unreal layouts that do not use only
-  `Content\Paks\~mods` and `Binaries\Win64`.
-- Show skipped files in the main UI, not only in preview/issues popups.
-- Add a simple "verify applied files" action that checks the latest manifest
-  against the game folder.
-- Make restore safer and more visible without bringing back a confusing
-  top-level undo button.
-
 ## Mod Import
 
 - Preserve archive readme/install notes somewhere visible after import.
@@ -25,7 +15,7 @@
 
 ## Release
 
-- Add an installer or portable zip release workflow.
+- Add a native installer when portable zip releases are not enough.
 - Add screenshots after the UI settles.
 - Keep README and Korean README in sync for each user-visible release.
 

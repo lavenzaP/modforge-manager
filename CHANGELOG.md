@@ -9,6 +9,11 @@
 - Added `.zip`, `.rar`, `.7z`, loose folder, and loose Unreal package import.
 - Added basic Unreal package apply to `Content\Paks\~mods` plus simple UE4SS/runtime DLL placement.
 - Added manifest-backed apply, reapply, restore, and hash-checked undo safety.
+- Added a visible applied-file check against the latest apply manifest.
+- Made restore preview safer by blocking restore when applied files changed or went missing.
+- Show skipped files in the main mod list summary/status.
+- Added a per-game PAK/UCAS/UTOC install folder override for Unreal games.
 - Added Steam manifest detection so Steam games launch through `steam://rungameid/<appid>`.
+- Added a portable zip packaging script with SHA256 output.
 - Improved conflict review so users can see the game file, copied mod, ignored mods, and how to change the winner.
 - Replaced CI with Windows launcher smoke checks.
