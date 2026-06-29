@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.IO.Compression;
+using Microsoft.Win32;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows.Forms;
@@ -157,8 +158,13 @@ internal static class Program
             var steamApps = Path.Combine(root, "Steam", "steamapps");
             var steamGame = Path.Combine(steamApps, "common", "Palworld");
             Directory.CreateDirectory(steamGame);
+            Directory.CreateDirectory(Path.Combine(steamGame, "Content", "Paks"));
             File.WriteAllText(Path.Combine(steamApps, "appmanifest_1623730.acf"), "\"AppState\"\n{\n\t\"appid\"\t\t\"1623730\"\n\t\"installdir\"\t\t\"Palworld\"\n}\n");
             if (MainForm.FindSteamAppId(steamGame) != "1623730") return 16;
+            var steamRoot = Path.Combine(root, "Steam");
+            File.WriteAllText(Path.Combine(steamApps, "libraryfolders.vdf"), "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"" + steamRoot.Replace("\\", "\\\\") + "\"\n\t}\n}\n");
+            var detectedSteamGame = MainForm.FindInstalledSteamGames([steamRoot]).SingleOrDefault();
+            if (detectedSteamGame is null || detectedSteamGame.AppId != "1623730" || detectedSteamGame.Name != "Palworld" || !detectedSteamGame.GamePath.EndsWith("Palworld", StringComparison.OrdinalIgnoreCase)) return 24;
             if (!AppPaths.ConfigPath.StartsWith(AppPaths.Root, StringComparison.OrdinalIgnoreCase)) return 17;
             if (!Program.DefaultModsPath.StartsWith(AppPaths.GamesRoot, StringComparison.OrdinalIgnoreCase)) return 18;
 
@@ -176,6 +182,15 @@ internal static class Program
             ZipFile.CreateFromDirectory(zipSource, zipPath);
             MainForm.ImportMod(zipPath, importMods);
             if (!File.Exists(Path.Combine(importMods, "ZipMod", "zip.pak"))) return 15;
+            var wrapperSource = Path.Combine(root, "wrapper-source", "BetterName");
+            Directory.CreateDirectory(wrapperSource);
+            File.WriteAllText(Path.Combine(wrapperSource, "README.txt"), "install notes");
+            File.WriteAllText(Path.Combine(wrapperSource, "wrapped.pak"), "wrapped");
+            var wrapperZip = Path.Combine(root, "ArchiveName.zip");
+            ZipFile.CreateFromDirectory(Path.Combine(root, "wrapper-source"), wrapperZip);
+            MainForm.ImportMod(wrapperZip, importMods);
+            if (!File.Exists(Path.Combine(importMods, "BetterName", "wrapped.pak"))) return 25;
+            if (Scanner.Scan(importMods).First(mod => mod.Name == "BetterName").NotesPath is null) return 26;
 
             GameApplier.Apply(scanned, game, mods);
             var syncedOff = GameApplier.ApplyCurrentSelection([], game, mods);
@@ -238,6 +253,7 @@ internal sealed class MainForm : Form
         BuildUi();
         WireEvents();
         ScanMods();
+        if (!Directory.Exists(_gamePath)) BeginInvoke(new Action(OfferGameSetup));
     }
 
     private void BuildUi()
@@ -282,7 +298,7 @@ internal sealed class MainForm : Form
         _gamePicker.DataSource = _games;
         _gamePicker.Margin = new Padding(0, 0, 8, 0);
         header.Controls.Add(_gamePicker, 2, 0);
-        header.Controls.Add(Button("Change Game", ChangeGame, 112), 3, 0);
+        header.Controls.Add(Button("Choose Game Folder", ChangeGame, 140), 3, 0);
         header.Controls.Add(new Panel { Dock = DockStyle.Fill }, 4, 0);
         header.Controls.Add(Chip("Dry-run safe", Color.FromArgb(22, 101, 52), Color.FromArgb(220, 252, 231)), 5, 0);
         header.Controls.Add(_launch, 6, 0);
@@ -402,11 +418,17 @@ internal sealed class MainForm : Form
         var menu = new ContextMenuStrip();
         menu.Items.Add("Preview Changes", null, (_, _) => PreviewChanges());
         menu.Items.Add("Review Conflicts / Skipped", null, (_, _) => ShowIssues());
+        menu.Items.Add("Check Mod Archive", null, (_, _) => CheckModArchive());
+        menu.Items.Add("Open Mod Instructions", null, (_, _) => OpenModNotes());
         menu.Items.Add("Check Applied Mods", null, (_, _) => VerifyAppliedFiles());
+        menu.Items.Add("Export Diagnostic Report", null, (_, _) => ExportDiagnosticReport());
         menu.Items.Add("Translation Inventory", null, (_, _) => ShowTranslationInventory());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Restore Last Apply", null, (_, _) => RestoreLastApply());
-        menu.Items.Add("Change Game", null, (_, _) => ChangeGame());
+        menu.Items.Add("Add Steam Game", null, (_, _) => AddSteamGame());
+        menu.Items.Add("Choose Game Folder", null, (_, _) => ChangeGame());
+        menu.Items.Add("Rename Game Profile", null, (_, _) => RenameGameProfile());
+        menu.Items.Add("Remove Game Profile", null, (_, _) => RemoveGameProfile());
         menu.Items.Add("Change Mods Folder", null, (_, _) => ChangeModsFolder());
         menu.Items.Add("Change PAK Install Folder", null, (_, _) => ChangePakFolder());
         menu.Items.Add("Reset PAK Install Folder", null, (_, _) => ResetPakFolder());
@@ -527,7 +549,10 @@ internal sealed class MainForm : Form
                 ? "Conflict: lower mod wins"
                 : skippedByMod.TryGetValue(mod.Name, out var skipped)
                     ? $"Skipped: {skipped} file(s)"
-                : mod.FileCount == 0 ? "No files" : "OK";
+                : mod.FileCount == 0 ? "No files"
+                : !string.IsNullOrWhiteSpace(mod.Warning) ? mod.Warning
+                : mod.NotesPath is not null ? "OK - instructions"
+                : "OK";
         }
         _rows.ResetBindings(false);
         _grid.Invalidate();
@@ -711,6 +736,95 @@ internal sealed class MainForm : Form
         MessageBox.Show(this, string.Join("\n\n", conflicts.Concat(skipped)), "Review Conflicts / Skipped");
     }
 
+    private void OpenModNotes()
+    {
+        var mod = SelectedMods().FirstOrDefault() ?? _grid.CurrentRow?.DataBoundItem as ModRow;
+        if (mod?.NotesPath is null || !File.Exists(mod.NotesPath))
+        {
+            MessageBox.Show(this, "No preserved README or install notes were found for the selected mod.", "Mod Instructions");
+            return;
+        }
+        Process.Start(new ProcessStartInfo(mod.NotesPath) { UseShellExecute = true });
+    }
+
+    private void CheckModArchive()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Check Mod Archive",
+            Filter = "Archive files (*.zip;*.rar;*.7z)|*.zip;*.rar;*.7z|All files (*.*)|*.*",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var temp = Path.Combine(Path.GetTempPath(), "modforge-check-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            if (Path.GetExtension(dialog.FileName).Equals(".zip", StringComparison.OrdinalIgnoreCase)) ExtractZipSafe(dialog.FileName, temp);
+            else ExtractWithTarSafe(dialog.FileName, temp);
+            var root = ImportContentRoot(temp);
+            var packages = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Where(VirtualPlanner.IsPackageFile).ToList();
+            var notes = Scanner.FindNoteFiles(root).Select(Path.GetFileName).Take(8).ToList();
+            var finalName = ReferenceEquals(root, temp) ? Path.GetFileNameWithoutExtension(dialog.FileName) : Path.GetFileName(root);
+            var warning = Scanner.PackageWarning(root);
+            var message = $"Looks safe to inspect.\n\nFinal mod folder: {finalName}\nPackage files: {packages.Count}\nInstructions found: {notes.Count}\n{(notes.Count == 0 ? "" : "\nNotes:\n" + string.Join("\n", notes))}\n{(string.IsNullOrWhiteSpace(warning) ? "" : "\n" + warning)}\n\nNo game files or mod library files were changed.";
+            MessageBox.Show(this, message, "Import Check", MessageBoxButtons.OK, string.IsNullOrWhiteSpace(warning) ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"This archive was not imported.\n\nTry a .zip file, extract it manually, or check whether it is corrupt or password-protected.\n\nDetails: {ex.Message}", "Import Check", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            if (Directory.Exists(temp)) Directory.Delete(temp, recursive: true);
+        }
+    }
+
+    private void ExportDiagnosticReport()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Export Diagnostic Report",
+            FileName = $"modforge-diagnostic-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            Filter = "JSON report (*.json)|*.json",
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var report = new
+        {
+            app = "ModForge Manager",
+            createdAt = DateTimeOffset.Now,
+            game = new
+            {
+                _profile.Name,
+                GamePath = RedactPath(_gamePath),
+                ModsPath = RedactPath(_modsPath),
+                _profile.UnrealPakRoot,
+                SteamAppId = FindSteamAppId(_gamePath),
+            },
+            mods = _mods.Select(mod => new
+            {
+                mod.Priority,
+                mod.Enabled,
+                mod.Name,
+                mod.ModSet,
+                mod.Status,
+                mod.FileCount,
+                HasInstructions = mod.NotesPath is not null,
+                Path = RedactPath(mod.Path),
+            }),
+            plan = new
+            {
+                Entries = _plan.Entries.Count,
+                Winners = _plan.Winners.Count,
+                Conflicts = _plan.Conflicts.Count,
+                Skipped = _plan.Skipped.Count,
+                ConflictItems = _plan.Conflicts,
+                SkippedItems = _plan.Skipped,
+            },
+            latestApply = GameApplier.VerifyLatest(_gamePath, _modsPath),
+        };
+        File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        SetStatus($"Diagnostic report exported - {Short(dialog.FileName)}");
+    }
+
     private static string ConflictText(ConflictInfo conflict)
     {
         var candidates = conflict.Candidates
@@ -752,9 +866,46 @@ internal sealed class MainForm : Form
         SetStatus("Launching directly - Steam app was not detected");
     }
 
+    private void OfferGameSetup()
+    {
+        var result = MessageBox.Show(this, "Choose a game folder to start.\n\nYes: find installed Steam Unreal games\nNo: choose the folder manually\nCancel: later", "Set Up Game", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
+        if (result == DialogResult.Yes) AddSteamGame();
+        else if (result == DialogResult.No) ChangeGame();
+        else SetStatus("Choose a game folder when you are ready");
+    }
+
+    private void AddSteamGame()
+    {
+        var games = FindInstalledSteamGames().OrderBy(game => game.Name).ToList();
+        if (games.Count == 0)
+        {
+            MessageBox.Show(this, "No installed Steam Unreal games were found. You can still choose the game folder manually.\n\nTip: choose the folder inside Steam\\steamapps\\common, for example Palworld or StellarBlade.", "Add Steam Game", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ChangeGame();
+            return;
+        }
+
+        using var form = new Form { Text = "Add Steam Game", Width = 560, Height = 420, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
+        var list = new ListBox { Dock = DockStyle.Fill, DataSource = games };
+        var hint = new Label { Text = "Select an installed Steam Unreal game. You can still use Choose Game Folder for non-Steam games.", Dock = DockStyle.Top, Height = 42, Padding = new Padding(10, 8, 10, 0) };
+        var ok = new Button { Text = "Use Selected Game", DialogResult = DialogResult.OK, Dock = DockStyle.Right, Width = 140 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Dock = DockStyle.Right, Width = 90 };
+        var buttons = new Panel { Dock = DockStyle.Bottom, Height = 44 };
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(ok);
+        form.Controls.Add(list);
+        form.Controls.Add(hint);
+        form.Controls.Add(buttons);
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        if (form.ShowDialog(this) != DialogResult.OK || list.SelectedItem is not SteamGame game) return;
+        AddOrSwitchGame(game.Name, game.GamePath);
+        SetStatus($"Selected Steam game - {game.Name}");
+    }
+
     private void ChangeGame()
     {
-        using var dialog = new FolderBrowserDialog { Description = "Choose an Unreal game folder", SelectedPath = Directory.Exists(_gamePath) ? _gamePath : Program.DefaultGamePath };
+        var selected = Directory.Exists(_gamePath) ? _gamePath : SteamCommonFolder() ?? Program.DefaultGamePath;
+        using var dialog = new FolderBrowserDialog { Description = "Select the game folder inside Steam\\steamapps\\common, for example Palworld or StellarBlade.", SelectedPath = selected };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         var gamePath = dialog.SelectedPath;
         if (FindUnrealProjectFolder(gamePath) is null)
@@ -763,15 +914,45 @@ internal sealed class MainForm : Form
             return;
         }
 
+        AddOrSwitchGame(FriendlyGameName(gamePath), gamePath);
+    }
+
+    private void AddOrSwitchGame(string name, string gamePath)
+    {
         var existing = _profiles.FirstOrDefault(profile => SamePath(profile.GamePath, gamePath));
         var profile = existing ?? new GameProfile
         {
-            Name = FriendlyGameName(gamePath),
+            Name = name,
             GamePath = gamePath,
-            ModsPath = GameProfileStore.DefaultModsPathFor(FriendlyGameName(gamePath)),
+            ModsPath = GameProfileStore.DefaultModsPathFor(name),
         };
         if (existing is null) _profiles.Add(profile);
         SwitchProfile(profile);
+    }
+
+    private void RenameGameProfile()
+    {
+        var name = PromptText("Rename Game Profile", "Profile name:", _profile.Name);
+        if (string.IsNullOrWhiteSpace(name)) return;
+        _profile.Name = name.Trim();
+        if (_profile.ModsPath == GameProfileStore.DefaultModsPathFor(Short(_profile.GamePath))) _profile.ModsPath = GameProfileStore.DefaultModsPathFor(_profile.Name);
+        GameProfileStore.Save(_profiles, _profile);
+        RefreshGamePicker();
+        SetStatus($"Renamed game profile - {_profile.Name}");
+    }
+
+    private void RemoveGameProfile()
+    {
+        if (_profiles.Count <= 1)
+        {
+            MessageBox.Show(this, "Keep at least one game profile. No game files or mod folders were changed.", "Remove Game Profile");
+            return;
+        }
+        var answer = MessageBox.Show(this, $"Remove the profile '{_profile.Name}'?\n\nThis only removes the profile from ModForge. Game files and mod folders will not be deleted.", "Remove Game Profile", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (answer != DialogResult.Yes) return;
+        var removed = _profile;
+        _profiles.Remove(removed);
+        SwitchProfile(_profiles[0]);
     }
 
     private void ChangeModsFolder()
@@ -949,16 +1130,99 @@ internal sealed class MainForm : Form
         return null;
     }
 
+    internal static List<SteamGame> FindInstalledSteamGames(IEnumerable<string>? steamRoots = null)
+    {
+        var games = new List<SteamGame>();
+        foreach (var root in FindSteamLibraries(steamRoots))
+        {
+            var steamApps = Path.Combine(root, "steamapps");
+            var common = Path.Combine(steamApps, "common");
+            if (!Directory.Exists(steamApps) || !Directory.Exists(common)) continue;
+            foreach (var manifest in Directory.EnumerateFiles(steamApps, "appmanifest_*.acf"))
+            {
+                var appId = AcfValue(manifest, "appid");
+                var installDir = AcfValue(manifest, "installdir");
+                if (string.IsNullOrWhiteSpace(appId) || string.IsNullOrWhiteSpace(installDir)) continue;
+                var gamePath = Path.Combine(common, installDir);
+                if (!Directory.Exists(gamePath) || FindUnrealProjectFolder(gamePath) is null) continue;
+                games.Add(new SteamGame(AcfValue(manifest, "name") ?? installDir, gamePath, appId));
+            }
+        }
+        return games
+            .GroupBy(game => Path.GetFullPath(game.GamePath).TrimEnd('\\'), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private static IEnumerable<string> FindSteamLibraries(IEnumerable<string>? steamRoots = null)
+    {
+        var roots = (steamRoots ?? SteamRootCandidates()).Where(path => !string.IsNullOrWhiteSpace(path));
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots)
+        {
+            if (!Directory.Exists(root) || !seen.Add(Path.GetFullPath(root))) continue;
+            yield return root;
+            var libraryFolders = Path.Combine(root, "steamapps", "libraryfolders.vdf");
+            if (!File.Exists(libraryFolders)) continue;
+            foreach (var path in AcfValues(libraryFolders, "path"))
+            {
+                var cleaned = path.Replace("\\\\", "\\");
+                if (Directory.Exists(cleaned) && seen.Add(Path.GetFullPath(cleaned))) yield return cleaned;
+            }
+        }
+    }
+
+    private static IEnumerable<string> SteamRootCandidates()
+    {
+        foreach (var path in new[]
+        {
+            SteamRegistryPath(Registry.CurrentUser),
+            SteamRegistryPath(Registry.LocalMachine),
+            @"C:\Program Files (x86)\Steam",
+            @"C:\Program Files\Steam",
+        })
+        {
+            if (!string.IsNullOrWhiteSpace(path)) yield return path;
+        }
+    }
+
+    private static string? SteamRegistryPath(RegistryKey root)
+    {
+        try
+        {
+            using var key = root.OpenSubKey(@"Software\Valve\Steam");
+            return key?.GetValue("SteamPath") as string ?? key?.GetValue("InstallPath") as string;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? SteamCommonFolder()
+    {
+        foreach (var root in FindSteamLibraries())
+        {
+            var common = Path.Combine(root, "steamapps", "common");
+            if (Directory.Exists(common)) return common;
+        }
+        return null;
+    }
+
     private static string? AcfValue(string path, string key)
+    {
+        return AcfValues(path, key).FirstOrDefault();
+    }
+
+    private static IEnumerable<string> AcfValues(string path, string key)
     {
         foreach (var line in File.ReadLines(path))
         {
             var trimmed = line.Trim();
             if (!trimmed.StartsWith($"\"{key}\"", StringComparison.OrdinalIgnoreCase)) continue;
             var parts = trimmed.Split('"', StringSplitOptions.RemoveEmptyEntries);
-            return parts.Length >= 2 ? parts[^1] : null;
+            if (parts.Length >= 2) yield return parts[^1];
         }
-        return null;
     }
 
     internal static string? FindUnrealProjectFolder(string gameRoot)
@@ -995,7 +1259,9 @@ internal sealed class MainForm : Form
         Directory.CreateDirectory(modsPath);
         if (Directory.Exists(path))
         {
-            CopyDirectory(path, Path.Combine(modsPath, Path.GetFileName(path)));
+            var target = UniqueFolder(Path.Combine(modsPath, Path.GetFileName(path)));
+            CopyDirectory(path, target);
+            WriteImportMetadata(target, path, "Folder");
             return;
         }
         if (!File.Exists(path)) return;
@@ -1004,7 +1270,7 @@ internal sealed class MainForm : Form
             ExtractArchiveMod(path, modsPath);
             return;
         }
-        File.Copy(path, Path.Combine(modsPath, Path.GetFileName(path)), overwrite: true);
+        File.Copy(path, UniqueFile(Path.Combine(modsPath, Path.GetFileName(path))), overwrite: false);
     }
 
     internal static List<string> ImportArchivesInModsFolder(string modsPath)
@@ -1036,20 +1302,67 @@ internal sealed class MainForm : Form
 
     private static void ExtractArchiveMod(string archivePath, string modsPath)
     {
-        var target = Path.Combine(modsPath, Path.GetFileNameWithoutExtension(archivePath));
         var temp = Path.Combine(Path.GetTempPath(), "modforge-extract-" + Guid.NewGuid().ToString("N"));
         try
         {
             if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) ExtractZipSafe(archivePath, temp);
             else ExtractWithTarSafe(archivePath, temp);
-            if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
-            if (File.Exists(target)) File.Delete(target);
-            CopyDirectory(temp, target);
+            var source = ImportContentRoot(temp);
+            var name = ReferenceEquals(source, temp) ? Path.GetFileNameWithoutExtension(archivePath) : Path.GetFileName(source);
+            var target = UniqueFolder(Path.Combine(modsPath, string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(archivePath) : name));
+            CopyDirectory(source, target);
+            WriteImportMetadata(target, archivePath, "Archive");
         }
         finally
         {
             if (Directory.Exists(temp)) Directory.Delete(temp, recursive: true);
         }
+    }
+
+    private static string ImportContentRoot(string temp)
+    {
+        var files = Directory.EnumerateFiles(temp, "*", SearchOption.TopDirectoryOnly).ToList();
+        var dirs = Directory.EnumerateDirectories(temp).ToList();
+        return files.Count == 0 && dirs.Count == 1 ? dirs[0] : temp;
+    }
+
+    private static string UniqueFolder(string target)
+    {
+        if (!Directory.Exists(target) && !File.Exists(target)) return target;
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{target} ({i})";
+            if (!Directory.Exists(candidate) && !File.Exists(candidate)) return candidate;
+        }
+    }
+
+    private static string UniqueFile(string target)
+    {
+        if (!File.Exists(target) && !Directory.Exists(target)) return target;
+        var dir = Path.GetDirectoryName(target)!;
+        var name = Path.GetFileNameWithoutExtension(target);
+        var ext = Path.GetExtension(target);
+        for (var i = 2; ; i++)
+        {
+            var candidate = Path.Combine(dir, $"{name} ({i}){ext}");
+            if (!File.Exists(candidate) && !Directory.Exists(candidate)) return candidate;
+        }
+    }
+
+    private static void WriteImportMetadata(string modFolder, string sourcePath, string kind)
+    {
+        var files = Directory.EnumerateFiles(modFolder, "*", SearchOption.AllDirectories).ToList();
+        var metadata = new ModImportMetadata
+        {
+            ImportedAt = DateTimeOffset.Now,
+            Kind = kind,
+            OriginalSource = sourcePath,
+            FileCount = files.Count,
+            PackageFileCount = files.Count(file => VirtualPlanner.IsPackageFile(file)),
+            Notes = Scanner.FindNoteFiles(modFolder).Select(path => Path.GetRelativePath(modFolder, path)).ToList(),
+            Layout = files.Any(VirtualPlanner.IsPackageFile) ? "Unreal package mod" : "Unknown",
+        };
+        File.WriteAllText(Path.Combine(modFolder, "modforge-import.json"), JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static void ExtractWithTarSafe(string archivePath, string destination)
@@ -1117,6 +1430,28 @@ internal sealed class MainForm : Form
         return relative != "." && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar) && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar) && !Path.IsPathRooted(relative);
     }
     private void SetStatus(string value) => _status.Text = value;
+
+    private static string RedactPath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        var user = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(user) && full.StartsWith(user, StringComparison.OrdinalIgnoreCase)) return "%USERPROFILE%" + full[user.Length..];
+        if (full.StartsWith(AppPaths.Root, StringComparison.OrdinalIgnoreCase)) return "%MODFORGE%" + full[AppPaths.Root.Length..];
+        return full;
+    }
+
+    private static string? PromptText(string title, string label, string value)
+    {
+        using var form = new Form { Text = title, Width = 420, Height = 150, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false };
+        var text = new TextBox { Text = value, Left = 12, Top = 38, Width = 380 };
+        form.Controls.Add(new Label { Text = label, Left = 12, Top = 14, Width = 380 });
+        form.Controls.Add(text);
+        form.Controls.Add(new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 226, Top = 72, Width = 80 });
+        form.Controls.Add(new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 312, Top = 72, Width = 80 });
+        form.AcceptButton = form.Controls.OfType<Button>().First();
+        form.CancelButton = form.Controls.OfType<Button>().Last();
+        return form.ShowDialog() == DialogResult.OK ? text.Text : null;
+    }
 }
 
 internal sealed class ModRow
@@ -1129,6 +1464,19 @@ internal sealed class ModRow
     public string Status { get; set; } = "OK";
     public string Path { get; set; } = "";
     public int FileCount { get; set; }
+    public string? NotesPath { get; set; }
+    public string Warning { get; set; } = "";
+}
+
+internal sealed class ModImportMetadata
+{
+    public DateTimeOffset ImportedAt { get; set; }
+    public string Kind { get; set; } = "";
+    public string OriginalSource { get; set; } = "";
+    public int FileCount { get; set; }
+    public int PackageFileCount { get; set; }
+    public string Layout { get; set; } = "";
+    public List<string> Notes { get; set; } = [];
 }
 
 internal sealed class GameProfile
@@ -1144,6 +1492,11 @@ internal sealed class GameProfile
 internal sealed class GameProfileConfig
 {
     public List<GameProfile> Games { get; set; } = [];
+}
+
+internal sealed record SteamGame(string Name, string GamePath, string AppId)
+{
+    public override string ToString() => $"{Name}  ({AppId})";
 }
 
 internal static class AppPaths
@@ -1295,6 +1648,8 @@ internal static class Scanner
                     ModSet = GroupFor(name),
                     Path = path,
                     FileCount = File.Exists(path) ? 1 : Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Count(),
+                    NotesPath = Directory.Exists(path) ? FindNoteFiles(path).FirstOrDefault() : null,
+                    Warning = Directory.Exists(path) ? PackageWarning(path) : "",
                 };
             })
             .ToList();
@@ -1341,6 +1696,41 @@ internal static class Scanner
     }
 
     private static string ModName(string path) => Directory.Exists(path) ? Path.GetFileName(path) : Path.GetFileNameWithoutExtension(path);
+
+    public static IEnumerable<string> FindNoteFiles(string root)
+    {
+        if (!Directory.Exists(root)) yield break;
+        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            var name = Path.GetFileName(file);
+            if (name.StartsWith("readme", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("install", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("instruction", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("changelog", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("license", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("license.", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return file;
+            }
+        }
+    }
+
+    public static string PackageWarning(string root)
+    {
+        var packages = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(VirtualPlanner.IsPackageFile)
+            .ToList();
+        if (packages.Any(file => new FileInfo(file).Length == 0)) return "Warning: empty package file";
+        var packageNames = packages
+            .Where(file => Path.GetExtension(file).Equals(".pak", StringComparison.OrdinalIgnoreCase))
+            .Select(file => Path.GetFileNameWithoutExtension(file))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var sidecars = packages
+            .Where(file => Path.GetExtension(file).Equals(".ucas", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(file).Equals(".utoc", StringComparison.OrdinalIgnoreCase))
+            .Select(file => Path.GetFileNameWithoutExtension(file))
+            .ToList();
+        return sidecars.Any(name => !packageNames.Contains(name)) ? "Warning: package sidecar missing .pak" : "";
+    }
 
     private static string GroupFor(string name)
     {
@@ -1448,6 +1838,8 @@ internal static class VirtualPlanner
         return null;
     }
 
+    public static bool IsPackageFile(string path) => PackageExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
     private static string UnrealPath(string projectFolder, string relative) => string.IsNullOrWhiteSpace(projectFolder) ? relative : $"{projectFolder}/{relative}";
 
     private static string PackageRoot(string projectFolder, string unrealPakRoot)
@@ -1465,6 +1857,7 @@ internal static class VirtualPlanner
     {
         return name.Equals("mod_manifest.json", StringComparison.OrdinalIgnoreCase)
             || name.Equals("manifest.json", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("modforge-import.json", StringComparison.OrdinalIgnoreCase)
             || name.Equals("meta.ini", StringComparison.OrdinalIgnoreCase)
             || name.StartsWith("readme", StringComparison.OrdinalIgnoreCase);
     }

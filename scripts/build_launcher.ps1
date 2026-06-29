@@ -1,3 +1,7 @@
+param(
+    [switch]$SelfContained
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -9,7 +13,8 @@ if (Test-Path $Dist) {
     Remove-Item -LiteralPath $Dist -Recurse -Force
 }
 
-dotnet publish $Project --configuration Release --runtime win-x64 --self-contained false --property:PublishDir="$Dist\"
+$SelfContainedValue = if ($SelfContained) { "true" } else { "false" }
+dotnet publish $Project --configuration Release --runtime win-x64 --self-contained $SelfContainedValue --property:PublishDir="$Dist\"
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }

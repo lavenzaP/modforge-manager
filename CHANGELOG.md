@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.2-preview.1 - 2026-06-29
+
+- Made the portable release self-contained so normal users do not need the .NET SDK or runtime.
+- Added player-first quick start docs, Korean docs, release notes, and a release checklist.
+- Added Steam game detection from installed app manifests, `Add Steam Game`, profile rename, and profile removal.
+- Added safer archive import behavior with wrapper-folder cleanup, duplicate-name preservation, import metadata, preserved mod instructions, archive pre-check, and redacted diagnostic export.
+
 ## v0.1.1-preview.1 - 2026-06-29
 
 - Reset the project to a Windows-first C# WinForms launcher.

@@ -2,16 +2,13 @@
 
 ## Mod Import
 
-- Preserve archive readme/install notes somewhere visible after import.
-- Detect archives that contain one extra wrapper folder and display the final
-  mod name more cleanly.
 - Add clearer errors when Windows cannot extract `.rar` or `.7z`.
+- Improve import metadata UI beyond the current preserved-notes/status hints.
 
 ## Game Profiles
 
-- Let users rename game profiles.
-- Let users remove stale game profiles.
-- Detect Steam games from the installed app list instead of only folder picker.
+- Improve Steam game detection for non-default library layouts if users report misses.
+- Add a fuller first-run setup wizard if the current setup prompt is not enough.
 
 ## Release
 

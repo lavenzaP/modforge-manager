@@ -8,6 +8,33 @@ It is currently focused on the basic loop that has to work before anything
 else: add mods, turn them on or off, apply the current list to the game folder,
 and launch the game through Steam when possible.
 
+## Quick Start
+
+For normal users:
+
+1. Download `ModForge.Manager-v0.1.2-preview.1-win-x64.zip` from
+   [Releases](https://github.com/lavenzaP/modforge-manager/releases).
+   Do not download `Source code` unless you want to build the app yourself.
+2. Extract the zip anywhere.
+3. Run `ModForge.Launcher.exe`.
+4. Use `More` -> `Add Steam Game`, or choose your Unreal game folder manually.
+5. Drag mod archives, mod folders, or `.pak/.ucas/.utoc` files into the app,
+   turn mods on or off, then press `Apply Changes`.
+
+The release zip is self-contained. You do not need Visual Studio, the .NET SDK,
+or a build step to try it.
+
+This preview has no installer yet. Windows SmartScreen may warn because the app
+is unsigned. Normal use should not require administrator rights unless your game
+folder itself blocks writes.
+
+Safety basics:
+
+- ModForge stores its own mod library beside the executable.
+- `Apply Changes` only writes the currently enabled mods.
+- `Check Applied Mods` verifies files from the latest ModForge apply.
+- `Restore Last Apply` refuses to restore when files changed outside ModForge.
+
 ## Current Status
 
 This repository is being rebuilt around a simple C# WinForms launcher.
@@ -18,9 +45,14 @@ Working today:
 - Add `.zip`, `.rar`, and `.7z` archives by extracting them into the selected
   game's ModForge mods folder.
 - Add already-extracted mod folders by drag and drop.
+- Check mod archives before import without changing game or mod library files.
+- Preserve README/install notes from imported archives and folders.
+- Clean up one-wrapper-folder archives into a clearer final mod folder name.
 - Enable, disable, reorder, and search mods.
 - Store enabled state and priority in `modforge-state.json`.
 - Keep separate mod libraries per game profile.
+- Add installed Steam Unreal games from app manifests when they can be detected.
+- Rename or remove game profiles without deleting game or mod files.
 - Apply enabled Unreal package mods to `<Project>\Content\Paks\~mods`.
 - Change the PAK/UCAS/UTOC install folder per game when an Unreal game uses a
   different folder.
@@ -28,8 +60,10 @@ Working today:
 - Check applied files against the latest ModForge manifest.
 - Restore the latest ModForge apply with hash-checked manifests.
 - Show conflicts and skipped files before apply.
+- Export a redacted diagnostic report for troubleshooting.
 - Launch Steam games through `steam://rungameid/<appid>` when the Steam
   manifest can be detected.
+- Build a self-contained portable release zip.
 
 Not working yet:
 
@@ -60,14 +94,14 @@ Apply manifests and backups live next to that game's mods folder:
 <ModForge folder>\Games\<Game Name>\.modforge
 ```
 
-## Build
+## Build For Developers
 
 Requirements:
 
 - Windows
 - .NET 9 SDK
 
-Build the launcher:
+Build the launcher for development:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_launcher.ps1
@@ -79,7 +113,7 @@ Output:
 dist\ModForge.Launcher\ModForge.Launcher.exe
 ```
 
-## Smoke Test
+## Smoke Test For Developers
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke_launcher.ps1
@@ -90,7 +124,7 @@ temporary ModForge mods folder without touching real game files.
 
 ## Portable Package
 
-Build a portable zip:
+Build a self-contained portable zip:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\package_launcher.ps1
@@ -99,7 +133,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\package_launcher.ps1
 Output:
 
 ```text
-dist\ModForge.Launcher-win-x64.zip
+dist\ModForge.Manager-v0.1.2-preview.1-win-x64.zip
 ```
 
 Extract the zip anywhere and run `ModForge.Launcher.exe`. Game profiles,
@@ -110,7 +144,7 @@ ModForge mod folders, manifests, and backups are stored beside the executable.
 Use [docs/agent-pipeline.md](docs/agent-pipeline.md) for scoped agent work,
 beginner-user review, safety review, and release checks.
 
-## CLI Checks
+## CLI Checks For Developers
 
 Scan a mods folder:
 
