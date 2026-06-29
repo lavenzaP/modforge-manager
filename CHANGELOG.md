@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.1.1-preview.1 - 2026-06-29
 
 - Reset the project to a Windows-first C# WinForms launcher.
 - Removed the old Python backend, legacy GUI shells, old tests, and stale design docs from the active product path.
